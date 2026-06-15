@@ -1,7 +1,9 @@
 # رابط تحميل التطبيق
 
-بعد نجاح البناء على GitHub سيظهر ملف APK هنا:
+بعد نجاح البناء، حمل ملف APK مباشرة من هذا الرابط:
 
-`apk/walking-companion.apk`
+https://github.com/aljwaal1/walk/raw/main/apk/walking-companion.apk
 
-رابط التحميل المباشر سيُكتب تلقائيًا داخل هذا الملف بعد البناء.
+اسم الملف:
+
+apk/walking-companion.apk
