@@ -1,1418 +1,1186 @@
 import 'dart:async';
-import 'dart:convert';
-import 'dart:math';
-import 'dart:ui';
-
+import 'dart:io';
+import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
-import 'package:flutter_background_service/flutter_background_service.dart';
-import 'package:flutter_background_service_android/flutter_background_service_android.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
-import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:geolocator/geolocator.dart';
-import 'package:permission_handler/permission_handler.dart';
-import 'package:shared_preferences/shared_preferences.dart';
-import 'package:url_launcher/url_launcher.dart';
+import 'package:intl/intl.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:share_plus/share_plus.dart';
+import 'package:video_player/video_player.dart';
+import 'package:ffmpeg_kit_flutter_new/ffmpeg_kit.dart';
+import 'package:ffmpeg_kit_flutter_new/ffmpeg_kit_config.dart';
+import 'package:ffmpeg_kit_flutter_new/ffprobe_kit.dart';
+import 'package:ffmpeg_kit_flutter_new/return_code.dart';
 
-const developerEmail = 'fastunlocked2017@gmail.com';
-
-// ─────────────────────────── COLORS (light, vibrant, sport feel) ──
-class WC {
-  // Backgrounds
-  static const Color bg        = Color(0xFFF7FAF7);
-  static const Color surface   = Color(0xFFFFFFFF);
-  static const Color card      = Color(0xFFFFFFFF);
-  static const Color border    = Color(0xFFE6EEE3);
-
-  // Text
-  static const Color text      = Color(0xFF152019);
-  static const Color muted     = Color(0xFF647266);
-  static const Color hint      = Color(0xFFA4B2A1);
-
-  // Brand accents (vibrant sport palette)
-  static const Color green     = Color(0xFF22C55E); // primary action / progress
-  static const Color teal      = Color(0xFF14B8A6); // secondary accent
-  static const Color blue      = Color(0xFF3B82F6); // speed / stats
-  static const Color orange    = Color(0xFFFB923C); // streak / motivation
-  static const Color amber     = Color(0xFFF59E0B); // gps/status warm
-  static const Color violet    = Color(0xFF8B5CF6); // badges
-
-  static const LinearGradient heroGrad = LinearGradient(
-    colors: [Color(0xFF16A34A), Color(0xFF0D9488)],
-    begin: Alignment.topLeft,
-    end: Alignment.bottomRight,
-  );
-
-  static const LinearGradient timerGrad = LinearGradient(
-    colors: [Color(0xFF15803D), Color(0xFF0F766E)],
-    begin: Alignment.topLeft,
-    end: Alignment.bottomRight,
-  );
+// ═══════════════════════════════════════════════════════════════════════════
+// الألوان — هوية داش كام احترافية (أسود/رمادي غامق + أحمر للتسجيل)
+// ═══════════════════════════════════════════════════════════════════════════
+class DashColors {
+  static const bg = Color(0xFF0A0E12);
+  static const panel = Color(0xFF14191F);
+  static const panelBorder = Color(0xFF232B33);
+  static const red = Color(0xFFE53935); // لون التسجيل + الستامب
+  static const redDark = Color(0xFFB22A24);
+  static const green = Color(0xFF22C55E); // حالة طبيعية / جاهز
+  static const amber = Color(0xFFF5A623); // تنبيهات
+  static const textDim = Color(0xFF8A95A1);
+  static const textBright = Color(0xFFE8ECEF);
 }
 
-void main() {
+// ═══════════════════════════════════════════════════════════════════════════
+// الإشعارات
+// ═══════════════════════════════════════════════════════════════════════════
+final FlutterLocalNotificationsPlugin _notifications =
+    FlutterLocalNotificationsPlugin();
+bool _notifReady = false;
+
+const _recChannelId = 'dashcam_recording';
+const _recChannelName = 'حالة التسجيل';
+const _recNotifId = 5001;
+const _savedChannelId = 'dashcam_saved';
+const _savedChannelName = 'تم الحفظ';
+
+Future<void> setupNotifications() async {
+  if (_notifReady) return;
+  try {
+    const android = AndroidInitializationSettings('app_icon');
+    await _notifications.initialize(
+      const InitializationSettings(android: android),
+    );
+  } catch (_) {
+    try {
+      const android = AndroidInitializationSettings('ic_launcher');
+      await _notifications.initialize(
+        const InitializationSettings(android: android),
+      );
+    } catch (_) {
+      return;
+    }
+  }
+
+  final plugin = _notifications.resolvePlatformSpecificImplementation<
+      AndroidFlutterLocalNotificationsPlugin>();
+  if (plugin != null) {
+    try {
+      await plugin.createNotificationChannel(
+        const AndroidNotificationChannel(
+          _recChannelId,
+          _recChannelName,
+          description: 'إشعار ثابت أثناء تسجيل الفيديو',
+          importance: Importance.low,
+          playSound: false,
+          enableVibration: false,
+          showBadge: false,
+        ),
+      );
+    } catch (_) {}
+    try {
+      await plugin.createNotificationChannel(
+        const AndroidNotificationChannel(
+          _savedChannelId,
+          _savedChannelName,
+          description: 'إشعار عند حفظ مقطع جديد',
+          importance: Importance.defaultImportance,
+          playSound: true,
+        ),
+      );
+    } catch (_) {}
+    try {
+      await plugin.requestNotificationsPermission();
+    } catch (_) {}
+  }
+  _notifReady = true;
+}
+
+Future<void> showRecordingNotification() async {
+  await setupNotifications();
+  if (!_notifReady) return;
+  try {
+    await _notifications.show(
+      _recNotifId,
+      '🔴 التسجيل قيد التشغيل',
+      'داش كام يسجل الآن في الخلفية',
+      const NotificationDetails(
+        android: AndroidNotificationDetails(
+          _recChannelId,
+          _recChannelName,
+          channelDescription: 'إشعار ثابت أثناء تسجيل الفيديو',
+          importance: Importance.low,
+          priority: Priority.low,
+          ongoing: true,
+          autoCancel: false,
+          playSound: false,
+          enableVibration: false,
+          icon: 'app_icon',
+          category: AndroidNotificationCategory.service,
+          visibility: NotificationVisibility.public,
+          showWhen: false,
+        ),
+      ),
+    );
+  } catch (_) {}
+}
+
+Future<void> cancelRecordingNotification() async {
+  if (!_notifReady) return;
+  try {
+    await _notifications.cancel(_recNotifId);
+  } catch (_) {}
+}
+
+Future<void> showSavedNotification(String fileName) async {
+  await setupNotifications();
+  if (!_notifReady) return;
+  try {
+    await _notifications.show(
+      DateTime.now().millisecondsSinceEpoch.remainder(100000),
+      '✅ تم حفظ المقطع',
+      fileName,
+      const NotificationDetails(
+        android: AndroidNotificationDetails(
+          _savedChannelId,
+          _savedChannelName,
+          channelDescription: 'إشعار عند حفظ مقطع جديد',
+          importance: Importance.defaultImportance,
+          priority: Priority.defaultPriority,
+          icon: 'app_icon',
+        ),
+      ),
+    );
+  } catch (_) {}
+}
+
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  runApp(const WalkingCompanionApp());
+  await setupNotifications();
+  // تسجيل خطوط النظام مرة واحدة — مطلوب لـ FFmpeg drawtext على أندرويد
+  try {
+    await FFmpegKitConfig.setFontDirectoryList(['/system/fonts'], null);
+  } catch (_) {}
+  runApp(const DashCamApp());
 }
 
-// ─────────────────────────── APP ─────────────────────────────────
-class WalkingCompanionApp extends StatelessWidget {
-  const WalkingCompanionApp({super.key});
+class DashCamApp extends StatelessWidget {
+  const DashCamApp({super.key});
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
-      title: 'رفيق المشي',
-      locale: const Locale('ar'),
-      supportedLocales: const [Locale('ar'), Locale('en')],
-      localizationsDelegates: const [
-        GlobalMaterialLocalizations.delegate,
-        GlobalWidgetsLocalizations.delegate,
-        GlobalCupertinoLocalizations.delegate,
-      ],
+      title: 'داش كام بدون صوت',
       theme: ThemeData(
         useMaterial3: true,
-        scaffoldBackgroundColor: WC.bg,
-        fontFamily: 'sans-serif',
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: WC.green,
-          brightness: Brightness.light,
-          primary: WC.green,
-          secondary: WC.teal,
-          surface: WC.surface,
+        brightness: Brightness.dark,
+        scaffoldBackgroundColor: DashColors.bg,
+        colorScheme: const ColorScheme.dark(
+          primary: DashColors.red,
+          secondary: DashColors.green,
+          surface: DashColors.panel,
         ),
         appBarTheme: const AppBarTheme(
+          backgroundColor: DashColors.bg,
+          foregroundColor: DashColors.textBright,
           elevation: 0,
-          centerTitle: false,
-          backgroundColor: WC.bg,
-          foregroundColor: WC.text,
-          systemOverlayStyle: SystemUiOverlayStyle.dark,
-          titleTextStyle: TextStyle(
-            color: WC.text,
-            fontSize: 20,
-            fontWeight: FontWeight.w900,
-            letterSpacing: -0.3,
-          ),
-        ),
-        cardTheme: CardThemeData(
-          color: WC.card,
-          elevation: 0,
-          margin: EdgeInsets.zero,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(18),
-            side: const BorderSide(color: WC.border),
-          ),
-        ),
-        filledButtonTheme: FilledButtonThemeData(
-          style: FilledButton.styleFrom(
-            backgroundColor: WC.green,
-            foregroundColor: Colors.white,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-            padding: const EdgeInsets.symmetric(vertical: 16),
-            textStyle: const TextStyle(fontWeight: FontWeight.w800, fontSize: 15),
-          ),
-        ),
-        outlinedButtonTheme: OutlinedButtonThemeData(
-          style: OutlinedButton.styleFrom(
-            foregroundColor: WC.text,
-            side: const BorderSide(color: WC.border, width: 1.4),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-            padding: const EdgeInsets.symmetric(vertical: 14),
-          ),
-        ),
-        inputDecorationTheme: InputDecorationTheme(
-          filled: true,
-          fillColor: WC.surface,
-          labelStyle: const TextStyle(color: WC.muted),
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(14),
-            borderSide: const BorderSide(color: WC.border),
-          ),
-          enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(14),
-            borderSide: const BorderSide(color: WC.border),
-          ),
-          focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(14),
-            borderSide: const BorderSide(color: WC.green, width: 2),
-          ),
-        ),
-        segmentedButtonTheme: SegmentedButtonThemeData(
-          style: SegmentedButton.styleFrom(
-            backgroundColor: WC.surface,
-            selectedBackgroundColor: WC.green,
-            selectedForegroundColor: Colors.white,
-            foregroundColor: WC.text,
-            side: const BorderSide(color: WC.border),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-          ),
-        ),
-        navigationBarTheme: NavigationBarThemeData(
-          backgroundColor: WC.surface,
-          indicatorColor: WC.green.withValues(alpha: 0.16),
-          labelTextStyle: WidgetStateProperty.all(
-            const TextStyle(fontSize: 11, fontWeight: FontWeight.w800),
-          ),
         ),
       ),
-      home: const Directionality(
-        textDirection: TextDirection.rtl,
-        child: WalkingHomeScreen(),
-      ),
+      home: const DashCamHomePage(),
     );
   }
 }
 
-// ─────────────────────────── MODELS ──────────────────────────────
-class WalkSession {
-  const WalkSession({
-    required this.id,
-    required this.date,
-    required this.targetMinutes,
-    required this.durationSeconds,
-    required this.distanceMeters,
+// ═══════════════════════════════════════════════════════════════════════════
+// نموذج التسجيل
+// ═══════════════════════════════════════════════════════════════════════════
+class RecordingItem {
+  const RecordingItem({
+    required this.file,
+    required this.modified,
+    required this.size,
   });
-
-  final String id;
-  final DateTime date;
-  final int targetMinutes;
-  final int durationSeconds;
-  final double distanceMeters;
-
-  double get averageSpeedKmh {
-    if (durationSeconds <= 0) return 0;
-    return (distanceMeters / 1000) / (durationSeconds / 3600);
-  }
-
-  Map<String, dynamic> toJson() {
-    return {
-      'id': id,
-      'date': date.toIso8601String(),
-      'targetMinutes': targetMinutes,
-      'durationSeconds': durationSeconds,
-      'distanceMeters': distanceMeters,
-    };
-  }
-
-  factory WalkSession.fromJson(Map<String, dynamic> map) {
-    return WalkSession(
-      id: map['id'] as String? ?? DateTime.now().microsecondsSinceEpoch.toString(),
-      date: DateTime.tryParse(map['date'] as String? ?? '') ?? DateTime.now(),
-      targetMinutes: (map['targetMinutes'] as num?)?.toInt() ?? 10,
-      durationSeconds: (map['durationSeconds'] as num?)?.toInt() ?? 0,
-      distanceMeters: (map['distanceMeters'] as num?)?.toDouble() ?? 0,
-    );
-  }
+  final File file;
+  final DateTime modified;
+  final int size;
 }
 
-class DailyWalkSummary {
-  const DailyWalkSummary({
-    required this.date,
-    required this.durationSeconds,
-    required this.distanceMeters,
-  });
+enum ProcessingState { idle, encoding }
 
-  final DateTime date;
-  final int durationSeconds;
-  final double distanceMeters;
+/// قراءة سرعة واحدة مع الزمن النسبي منذ بداية التسجيل (بالثواني)
+class _SpeedSample {
+  const _SpeedSample({required this.atSeconds, required this.kmh});
+  final double atSeconds;
+  final double kmh;
 }
 
-class BadgeInfo {
-  const BadgeInfo(this.title, this.description, this.unlocked, this.icon, this.color);
-
-  final String title;
-  final String description;
-  final bool unlocked;
-  final IconData icon;
-  final Color color;
-}
-
-// ─────────────────────────── BACKGROUND SERVICE ──────────────────
-// Keys used to communicate between the UI and the background isolate
-// via SharedPreferences (simple + reliable across process restarts).
-class BgKeys {
-  static const tracking = 'bg_tracking';
-  static const startEpoch = 'bg_start_epoch';
-  static const targetMinutes = 'bg_target_minutes';
-  static const distanceMeters = 'bg_distance_meters';
-  static const lastLat = 'bg_last_lat';
-  static const lastLng = 'bg_last_lng';
-  static const gpsAccuracy = 'bg_gps_accuracy';
-  static const elapsedSeconds = 'bg_elapsed_seconds';
-}
-
-Future<void> initializeBackgroundService() async {
-  final service = FlutterBackgroundService();
-
-  const channel = AndroidNotificationChannel(
-    'walking_companion_tracking',
-    'تتبع المشي',
-    description: 'إشعار صامت يظهر فقط أثناء جلسة مشي نشطة',
-    importance: Importance.low,
-    playSound: false,
-    enableVibration: false,
-    showBadge: false,
-  );
-
-  final notifications = FlutterLocalNotificationsPlugin();
-  await notifications
-      .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
-      ?.createNotificationChannel(channel);
-
-  await service.configure(
-    androidConfiguration: AndroidConfiguration(
-      onStart: onBackgroundServiceStart,
-      autoStart: false,
-      isForegroundMode: true,
-      notificationChannelId: 'walking_companion_tracking',
-      initialNotificationTitle: 'رفيق المشي',
-      initialNotificationContent: 'جاري تجهيز التتبع...',
-      foregroundServiceNotificationId: 5050,
-      foregroundServiceTypes: [AndroidForegroundType.location],
-    ),
-    iosConfiguration: IosConfiguration(
-      autoStart: false,
-      onForeground: onBackgroundServiceStart,
-    ),
-  );
-}
-
-// Entry point that runs inside the background isolate.
-@pragma('vm:entry-point')
-void onBackgroundServiceStart(ServiceInstance service) async {
-  DartPluginRegistrant.ensureInitialized();
-
-  final prefs = await SharedPreferences.getInstance();
-  Position? lastPosition;
-  Timer? ticker;
-  StreamSubscription<Position>? posSub;
-
-  Future<void> stopAll() async {
-    ticker?.cancel();
-    await posSub?.cancel();
-    posSub = null;
-    if (service is AndroidServiceInstance) {
-      service.setAsBackgroundService();
-    }
-  }
-
-  if (service is AndroidServiceInstance) {
-    service.on('setAsForeground').listen((event) {
-      service.setAsForegroundService();
-    });
-    service.on('setAsBackground').listen((event) {
-      service.setAsBackgroundService();
-    });
-  }
-
-  service.on('stopService').listen((event) async {
-    await stopAll();
-    await service.stopSelf();
-  });
-
-  service.on('startTracking').listen((event) async {
-    final targetMinutes = (event?['targetMinutes'] as num?)?.toInt() ?? 10;
-    await prefs.setBool(BgKeys.tracking, true);
-    await prefs.setInt(BgKeys.startEpoch, DateTime.now().millisecondsSinceEpoch);
-    await prefs.setInt(BgKeys.targetMinutes, targetMinutes);
-    await prefs.setDouble(BgKeys.distanceMeters, 0);
-    await prefs.setInt(BgKeys.elapsedSeconds, 0);
-    lastPosition = null;
-
-    ticker?.cancel();
-    ticker = Timer.periodic(const Duration(seconds: 1), (_) async {
-      final startEpoch = prefs.getInt(BgKeys.startEpoch) ?? DateTime.now().millisecondsSinceEpoch;
-      final elapsed = ((DateTime.now().millisecondsSinceEpoch - startEpoch) / 1000).round();
-      await prefs.setInt(BgKeys.elapsedSeconds, elapsed);
-
-      final dist = prefs.getDouble(BgKeys.distanceMeters) ?? 0;
-      final mins = elapsed ~/ 60;
-      final secs = elapsed % 60;
-      final distLabel = dist < 1000 ? '${dist.toStringAsFixed(0)} م' : '${(dist / 1000).toStringAsFixed(2)} كم';
-
-      if (service is AndroidServiceInstance) {
-        service.setForegroundNotificationInfo(
-          title: '🚶 جاري تتبع المشي',
-          content: '${mins.toString().padLeft(2, '0')}:${secs.toString().padLeft(2, '0')} • $distLabel',
-        );
-      }
-
-      service.invoke('tick', {
-        'elapsedSeconds': elapsed,
-        'distanceMeters': dist,
-      });
-
-      if (elapsed >= targetMinutes * 60) {
-        service.invoke('autoComplete', {});
-      }
-    });
-
-    posSub?.cancel();
-    const settings = LocationSettings(accuracy: LocationAccuracy.best, distanceFilter: 3);
-    posSub = Geolocator.getPositionStream(locationSettings: settings).listen((position) async {
-      final tracking = prefs.getBool(BgKeys.tracking) ?? false;
-      if (!tracking) return;
-      if (lastPosition != null) {
-        final meters = Geolocator.distanceBetween(
-          lastPosition!.latitude,
-          lastPosition!.longitude,
-          position.latitude,
-          position.longitude,
-        );
-        if (meters >= 0 && meters < 80) {
-          final current = prefs.getDouble(BgKeys.distanceMeters) ?? 0;
-          await prefs.setDouble(BgKeys.distanceMeters, current + meters);
-        }
-      }
-      lastPosition = position;
-      await prefs.setDouble(BgKeys.lastLat, position.latitude);
-      await prefs.setDouble(BgKeys.lastLng, position.longitude);
-      await prefs.setDouble(BgKeys.gpsAccuracy, position.accuracy);
-      service.invoke('gpsUpdate', {'accuracy': position.accuracy});
-    });
-  });
-
-  service.on('stopTracking').listen((event) async {
-    await prefs.setBool(BgKeys.tracking, false);
-    await stopAll();
-  });
-}
-
-String dayKey(DateTime date) => '${date.year}-${date.month}-${date.day}';
-
-String formatDuration(int totalSeconds) {
-  final minutes = (totalSeconds ~/ 60).toString().padLeft(2, '0');
-  final seconds = (totalSeconds % 60).toString().padLeft(2, '0');
-  return '$minutes:$seconds';
-}
-
-String formatDistance(double meters) {
-  if (meters < 1000) return '${meters.toStringAsFixed(0)} م';
-  return '${(meters / 1000).toStringAsFixed(2)} كم';
-}
-
-String formatDayLabel(DateTime date) {
-  const days = ['الأحد', 'الإثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'];
-  return days[date.weekday % 7];
-}
-
-// ─────────────────────────── HOME SCREEN ─────────────────────────
-class WalkingHomeScreen extends StatefulWidget {
-  const WalkingHomeScreen({super.key});
+class DashCamHomePage extends StatefulWidget {
+  const DashCamHomePage({super.key});
 
   @override
-  State<WalkingHomeScreen> createState() => _WalkingHomeScreenState();
+  State<DashCamHomePage> createState() => _DashCamHomePageState();
 }
 
-class _WalkingHomeScreenState extends State<WalkingHomeScreen> {
-  static const _storageKey = 'walking_companion_sessions_v1';
+class _DashCamHomePageState extends State<DashCamHomePage>
+    with WidgetsBindingObserver {
+  final DateFormat _stampFormat = DateFormat('yyyy-MM-dd  HH:mm:ss');
+  final DateFormat _fileFormat = DateFormat('yyyyMMdd_HHmmss');
+  final DateFormat _listFormat = DateFormat('yyyy-MM-dd  HH:mm');
 
-  final List<WalkSession> _sessions = [];
-  final FlutterBackgroundService _service = FlutterBackgroundService();
+  List<CameraDescription> _cameras = const [];
+  CameraController? _controller;
+  int _cameraIndex = 0;
+  bool _initializing = true;
+  bool _isRecording = false;
+  bool _switchingCamera = false;
+  String? _error;
+  Timer? _clockTimer;
+  Timer? _segmentTimer;
+  DateTime _now = DateTime.now();
+  double? _speedKmh;
+  StreamSubscription<Position>? _positionSub;
+  List<RecordingItem> _recordings = const [];
+  int _segmentMinutes = 3;
+  int _keepCount = 30;
 
-  int _tab = 0;
-  int _targetMinutes = 10;
-  int _elapsedSeconds = 0;
-  double _distanceMeters = 0;
-  bool _tracking = false;
-  bool _loading = true;
-  bool _serviceReady = false;
-  String _gpsStatus = 'جاهز';
-  StreamSubscription? _tickSub;
-  StreamSubscription? _gpsSub;
-  StreamSubscription? _autoCompleteSub;
+  // معالجة FFmpeg
+  ProcessingState _processing = ProcessingState.idle;
+  int _queueLength = 0;
+
+  // سجل قراءات السرعة أثناء التسجيل الحالي — يُستخدم لرسم سرعة متحركة
+  // فعلية داخل الفيديو بدل قيمة ثابتة واحدة.
+  DateTime? _recordingStartedAt;
+  final List<_SpeedSample> _speedLog = [];
 
   @override
   void initState() {
     super.initState();
-    _bootstrap();
+    WidgetsBinding.instance.addObserver(this);
+    _boot();
   }
 
   @override
   void dispose() {
-    _tickSub?.cancel();
-    _gpsSub?.cancel();
-    _autoCompleteSub?.cancel();
+    WidgetsBinding.instance.removeObserver(this);
+    _clockTimer?.cancel();
+    _segmentTimer?.cancel();
+    _positionSub?.cancel();
+    _controller?.dispose();
     super.dispose();
   }
 
-  Future<void> _bootstrap() async {
-    await _loadSessions();
-    await _initService();
-    await _resumeIfTrackingInBackground();
-    if (mounted) setState(() => _loading = false);
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.inactive ||
+        state == AppLifecycleState.paused) {
+      if (_isRecording) {
+        _stopRecording();
+      }
+    }
   }
 
-  Future<void> _initService() async {
+  Future<void> _boot() async {
+    _clockTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (mounted) setState(() => _now = DateTime.now());
+    });
+
     try {
-      await initializeBackgroundService();
-      _serviceReady = true;
-
-      _tickSub = _service.on('tick').listen((event) {
-        if (!mounted || event == null) return;
+      _cameras = await availableCameras();
+      if (_cameras.isEmpty) {
         setState(() {
-          _elapsedSeconds = (event['elapsedSeconds'] as num?)?.toInt() ?? _elapsedSeconds;
-          _distanceMeters = (event['distanceMeters'] as num?)?.toDouble() ?? _distanceMeters;
+          _error = 'لم يتم العثور على كاميرا في هذا الجهاز';
+          _initializing = false;
         });
+        return;
+      }
+      _cameraIndex = _preferredBackCameraIndex();
+      await _initCamera();
+      await _startLocation();
+      await _loadRecordings();
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _error = 'تعذر تشغيل الكاميرا: $e';
+        _initializing = false;
       });
-
-      _gpsSub = _service.on('gpsUpdate').listen((event) {
-        if (!mounted || event == null) return;
-        final acc = (event['accuracy'] as num?)?.toDouble() ?? 0;
-        setState(() => _gpsStatus = 'دقة الموقع ${acc.toStringAsFixed(0)} م');
-      });
-
-      _autoCompleteSub = _service.on('autoComplete').listen((event) {
-        if (!mounted) return;
-        _stopWalk(autoCompleted: true);
-      });
-    } catch (_) {
-      _serviceReady = false;
     }
   }
 
-  // If the app process was killed while tracking continued in the
-  // background, restore the UI state from SharedPreferences.
-  Future<void> _resumeIfTrackingInBackground() async {
-    final prefs = await SharedPreferences.getInstance();
-    final tracking = prefs.getBool(BgKeys.tracking) ?? false;
-    if (!tracking) return;
+  int _preferredBackCameraIndex() {
+    final index =
+        _cameras.indexWhere((c) => c.lensDirection == CameraLensDirection.back);
+    return index >= 0 ? index : 0;
+  }
+
+  Future<void> _initCamera() async {
     setState(() {
-      _tracking = true;
-      _targetMinutes = prefs.getInt(BgKeys.targetMinutes) ?? 10;
-      _elapsedSeconds = prefs.getInt(BgKeys.elapsedSeconds) ?? 0;
-      _distanceMeters = prefs.getDouble(BgKeys.distanceMeters) ?? 0;
-      _gpsStatus = 'جاري التتبع في الخلفية';
+      _initializing = true;
+      _error = null;
+    });
+
+    final old = _controller;
+    _controller = null;
+    await old?.dispose();
+
+    final controller = CameraController(
+      _cameras[_cameraIndex],
+      ResolutionPreset.high,
+      enableAudio: false,
+      imageFormatGroup: ImageFormatGroup.yuv420,
+    );
+
+    await controller.initialize();
+    if (!mounted) {
+      await controller.dispose();
+      return;
+    }
+
+    setState(() {
+      _controller = controller;
+      _initializing = false;
     });
   }
 
-  Future<void> _loadSessions() async {
-    final prefs = await SharedPreferences.getInstance();
-    final saved = prefs.getString(_storageKey);
-    if (saved != null && saved.isNotEmpty) {
-      final decoded = jsonDecode(saved) as List<dynamic>;
-      _sessions
-        ..clear()
-        ..addAll(decoded.map((item) => WalkSession.fromJson(item as Map<String, dynamic>)));
+  Future<Directory> _recordingsDir() async {
+    final dir = await getApplicationDocumentsDirectory();
+    final folder = Directory('${dir.path}/dashcam_recordings');
+    if (!await folder.exists()) await folder.create(recursive: true);
+    return folder;
+  }
+
+  Future<Directory> _tempDir() async {
+    final dir = await getApplicationDocumentsDirectory();
+    final folder = Directory('${dir.path}/dashcam_tmp');
+    if (!await folder.exists()) await folder.create(recursive: true);
+    return folder;
+  }
+
+  Future<void> _loadRecordings() async {
+    final dir = await _recordingsDir();
+    final files = await dir
+        .list()
+        .where((e) => e is File && e.path.toLowerCase().endsWith('.mp4'))
+        .cast<File>()
+        .toList();
+
+    final items = <RecordingItem>[];
+    for (final file in files) {
+      try {
+        final stat = await file.stat();
+        items.add(RecordingItem(file: file, modified: stat.modified, size: stat.size));
+      } catch (_) {}
     }
+    items.sort((a, b) => b.modified.compareTo(a.modified));
+    if (mounted) setState(() => _recordings = items);
   }
 
-  Future<void> _saveSessions() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_storageKey, jsonEncode(_sessions.map((item) => item.toJson()).toList()));
+  Future<void> _cleanupOldRecordings() async {
+    await _loadRecordings();
+    final extra = _recordings.skip(_keepCount).toList();
+    for (final item in extra) {
+      try {
+        if (await item.file.exists()) await item.file.delete();
+      } catch (_) {}
+    }
+    await _loadRecordings();
   }
 
-  List<WalkSession> get _orderedSessions {
-    return [..._sessions]..sort((a, b) => b.date.compareTo(a.date));
-  }
-
-  List<DailyWalkSummary> get _lastSevenDays {
-    final today = DateTime.now();
-    return List.generate(7, (index) {
-      final day = DateTime(today.year, today.month, today.day).subtract(Duration(days: 6 - index));
-      final list = _sessions.where((session) => dayKey(session.date) == dayKey(day)).toList();
-      return DailyWalkSummary(
-        date: day,
-        durationSeconds: list.fold(0, (sum, item) => sum + item.durationSeconds),
-        distanceMeters: list.fold(0, (sum, item) => sum + item.distanceMeters),
+  Future<void> _startLocation() async {
+    try {
+      var permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+      }
+      if (permission == LocationPermission.denied ||
+          permission == LocationPermission.deniedForever) {
+        return;
+      }
+      const settings = LocationSettings(
+        accuracy: LocationAccuracy.bestForNavigation,
+        distanceFilter: 0,
       );
-    });
+      _positionSub =
+          Geolocator.getPositionStream(locationSettings: settings).listen((pos) {
+        final speed = (pos.speed * 3.6).clamp(0, 399).toDouble();
+        if (mounted) setState(() => _speedKmh = speed);
+
+        // أثناء التسجيل نسجّل كل قراءة مع زمنها النسبي لبناء سرعة متحركة
+        // فعلية داخل الفيديو لاحقاً، بدل قيمة ثابتة واحدة.
+        if (_isRecording && _recordingStartedAt != null) {
+          final elapsed =
+              DateTime.now().difference(_recordingStartedAt!).inMilliseconds /
+                  1000.0;
+          _speedLog.add(_SpeedSample(atSeconds: elapsed, kmh: speed));
+        }
+      });
+    } catch (_) {}
   }
 
-  int get _streakDays {
-    var streak = 0;
-    var cursor = DateTime.now();
-    while (true) {
-      final hasWalk = _sessions.any((session) => dayKey(session.date) == dayKey(cursor));
-      if (!hasWalk) break;
-      streak++;
-      cursor = cursor.subtract(const Duration(days: 1));
+  Future<void> _startRecording() async {
+    final controller = _controller;
+    if (controller == null || !controller.value.isInitialized || _isRecording) {
+      return;
     }
-    return streak;
+    try {
+      await controller.startVideoRecording();
+      if (!mounted) return;
+      _speedLog.clear();
+      _recordingStartedAt = DateTime.now();
+      setState(() => _isRecording = true);
+      await showRecordingNotification();
+      _segmentTimer?.cancel();
+      _segmentTimer = Timer(Duration(minutes: _segmentMinutes), _restartSegment);
+    } catch (e) {
+      if (!mounted) return;
+      _showSnack('تعذر بدء التسجيل');
+    }
   }
 
-  int get _totalMinutes {
-    return (_sessions.fold(0, (sum, item) => sum + item.durationSeconds) / 60).round();
+  Future<void> _restartSegment() async {
+    if (!_isRecording) return;
+    await _stopRecording(startAgain: true);
   }
 
-  double get _totalDistanceKm {
-    return _sessions.fold(0.0, (sum, item) => sum + item.distanceMeters) / 1000;
+  Future<void> _stopRecording({bool startAgain = false}) async {
+    final controller = _controller;
+    if (controller == null || !_isRecording) return;
+    _segmentTimer?.cancel();
+    try {
+      final raw = await controller.stopVideoRecording();
+      if (mounted) setState(() => _isRecording = false);
+      await cancelRecordingNotification();
+
+      // ننسخ سجل السرعة لهذا المقطع قبل أن يُصفَّر عند بدء التسجيل التالي
+      final speedSnapshot = List<_SpeedSample>.from(_speedLog);
+
+      // معالجة الفيديو بـ FFmpeg لحرق الستامب — تعمل بالخلفية بدون حجب الواجهة
+      unawaited(_processAndSave(File(raw.path), speedSnapshot));
+
+      await _cleanupOldRecordings();
+      if (startAgain && mounted) await _startRecording();
+    } catch (_) {
+      if (mounted) setState(() => _isRecording = false);
+      await cancelRecordingNotification();
+    }
   }
 
-  double get _averageSpeedKmh {
-    if (_elapsedSeconds <= 0) return 0;
-    return (_distanceMeters / 1000) / (_elapsedSeconds / 3600);
+  /// تجد أول خط متاح فعلياً على الجهاز من قائمة بدائل معروفة.
+  /// هذا ضروري لأن DroidSansMono غير موجود على أندرويد الحديث،
+  /// واسم الخط المتاح يختلف بين الشركات المصنّعة والإصدارات.
+  Future<String> _findAvailableFont() async {
+    const candidates = [
+      '/system/fonts/RobotoMono-Regular.ttf',
+      '/system/fonts/DroidSansMono.ttf',
+      '/system/fonts/Roboto-Regular.ttf',
+      '/system/fonts/NotoSans-Regular.ttf',
+      '/system/fonts/DroidSans.ttf',
+    ];
+    for (final path in candidates) {
+      if (await File(path).exists()) return path;
+    }
+    // لم يوجد أي خط من القائمة — نترك الأمر لـ fontconfig يختار تلقائياً
+    return '';
   }
 
-  double get _progress {
-    final total = _targetMinutes * 60;
-    if (total <= 0) return 0;
-    return (_elapsedSeconds / total).clamp(0, 1);
+  /// يبني ملف أوامر sendcmd يُحدّث نص السرعة فعلياً كل ثانية بالقيمة
+  /// الحقيقية المُسجَّلة من GPS أثناء التصوير، بدل قيمة ثابتة واحدة.
+  /// كل سطر يعيد تهيئة drawtext الثاني (مخصص للسرعة فقط) عند ثانية محددة.
+  String _buildSpeedCommandScript(List<_SpeedSample> samples, double durationSeconds) {
+    if (samples.isEmpty) {
+      return "0.0 [enter] drawtext@speed reinit 'text=GPS --';";
+    }
+
+    // نأخذ أقرب قراءة فعلية لكل ثانية كاملة من مدة الفيديو، بدل كل القراءات
+    // الخام (قد تكون كثيفة جداً) — هذا يبقي ملف الأوامر صغيراً وسلساً.
+    final lines = <String>[];
+    final totalSeconds = durationSeconds.ceil().clamp(1, 36000);
+
+    for (var second = 0; second <= totalSeconds; second++) {
+      // أقرب عينة لهذه الثانية
+      _SpeedSample closest = samples.first;
+      double bestDiff = (samples.first.atSeconds - second).abs();
+      for (final s in samples) {
+        final diff = (s.atSeconds - second).abs();
+        if (diff < bestDiff) {
+          bestDiff = diff;
+          closest = s;
+        }
+      }
+      final speedText = 'GPS ${closest.kmh.round()} km/h';
+      lines.add("$second.0 [enter] drawtext@speed reinit 'text=$speedText';");
+    }
+    return lines.join('\n');
+  }
+
+  /// يحرق الستامب (تاريخ/وقت متحرك + سرعة فعلية متحركة) داخل الفيديو
+  /// عبر FFmpeg — طبقتان من drawtext: واحدة للتاريخ/الوقت (تتحرك تلقائياً
+  /// عبر %{localtime})، وأخرى مخصصة للسرعة تُحدَّث عبر sendcmd بالقيم
+  /// الحقيقية المُسجَّلة من GPS في كل ثانية فعلية من زمن القيادة.
+  Future<void> _processAndSave(File rawFile, List<_SpeedSample> speedSamples) async {
+    setState(() {
+      _processing = ProcessingState.encoding;
+      _queueLength++;
+    });
+
+    File? cmdFile;
+    try {
+      final dir = await _recordingsDir();
+      final name = 'dashcam_${_fileFormat.format(DateTime.now())}.mp4';
+      final outputPath = '${dir.path}/$name';
+
+      // مدة الفيديو الفعلية — نحتاجها لمعرفة كم ثانية نولّد لها أوامر سرعة
+      double durationSeconds = 0;
+      try {
+        final probeSession =
+            await FFprobeKit.getMediaInformation(rawFile.path);
+        final info = await probeSession.getMediaInformation();
+        final durationStr = info?.getDuration();
+        if (durationStr != null) {
+          durationSeconds = double.tryParse(durationStr) ?? 0;
+        }
+      } catch (_) {}
+      if (durationSeconds <= 0) {
+        // تقدير احتياطي من مدة الجلسة المُسجَّلة محلياً
+        durationSeconds = speedSamples.isEmpty
+            ? _segmentMinutes * 60.0
+            : speedSamples.last.atSeconds;
+      }
+
+      // ملف أوامر السرعة المتحركة
+      final tmp = await _tempDir();
+      cmdFile = File('${tmp.path}/speedcmd_${DateTime.now().millisecondsSinceEpoch}.txt');
+      await cmdFile.writeAsString(
+        _buildSpeedCommandScript(speedSamples, durationSeconds),
+      );
+
+      final fontPath = await _findAvailableFont();
+      final fontPart = fontPath.isEmpty ? '' : 'fontfile=$fontPath:';
+
+      // طبقة 1: التاريخ والوقت — يتحرك تلقائياً عبر localtime مع كل فريم
+      // نستخدم فاصلاً (-) بدل (:) داخل صيغة الوقت لتفادي تعارضها مع
+      // فاصل معاملات drawtext نفسه — هذه الصيغة مختبرة وتعمل بثبات.
+      final dateTimeFilter = "drawtext="
+          "$fontPart"
+          "text='%{localtime\\:%Y-%m-%d %H-%M-%S}':"
+          "fontsize=22:"
+          "fontcolor=0xE53935:"
+          "borderw=2:"
+          "bordercolor=black@0.8:"
+          "x=14:"
+          "y=h-th-14";
+
+      // طبقة 2: السرعة — نص منفصل بجانب التاريخ، يُحدَّث بـ sendcmd
+      final initialSpeed = speedSamples.isEmpty
+          ? 'GPS --'
+          : 'GPS ${speedSamples.first.kmh.round()} km/h';
+      final speedFilter = "drawtext@speed="
+          "$fontPart"
+          "text='$initialSpeed':"
+          "fontsize=22:"
+          "fontcolor=0xE53935:"
+          "borderw=2:"
+          "bordercolor=black@0.8:"
+          "x=w-tw-14:"
+          "y=h-th-14";
+
+      final sendcmdFilter = "sendcmd=f=${cmdFile.path}";
+
+      // ترتيب السلسلة: التاريخ أولاً، ثم sendcmd يتحكم بطبقة السرعة الثانية
+      final filterChain =
+          '$dateTimeFilter,$sendcmdFilter,$speedFilter';
+
+      final cmd =
+          '-y -i "${rawFile.path}" -vf "$filterChain" -c:v libx264 -preset ultrafast '
+          '-crf 23 -pix_fmt yuv420p -an "$outputPath"';
+
+      final session = await FFmpegKit.execute(cmd);
+      final returnCode = await session.getReturnCode();
+
+      if (ReturnCode.isSuccess(returnCode)) {
+        try {
+          await rawFile.delete();
+        } catch (_) {}
+        await showSavedNotification(name);
+      } else {
+        // فشلت المعالجة — نحاول مرة أخرى بدون السرعة المتحركة (أبسط فلتر)
+        // كحل وسط قبل التنازل الكامل للنسخة الخام.
+        final fallbackFilter = "drawtext="
+            "$fontPart"
+            "text='%{localtime\\:%Y-%m-%d %H-%M-%S}  $initialSpeed':"
+            "fontsize=22:fontcolor=0xE53935:borderw=2:bordercolor=black@0.8:"
+            "x=14:y=h-th-14";
+        final fallbackCmd =
+            '-y -i "${rawFile.path}" -vf "$fallbackFilter" -c:v libx264 '
+            '-preset ultrafast -crf 23 -pix_fmt yuv420p -an "$outputPath"';
+        final fallbackSession = await FFmpegKit.execute(fallbackCmd);
+        final fallbackCode = await fallbackSession.getReturnCode();
+
+        if (ReturnCode.isSuccess(fallbackCode)) {
+          try {
+            await rawFile.delete();
+          } catch (_) {}
+          await showSavedNotification(name);
+        } else {
+          // فشل كل شيء — نحفظ النسخة الخام بدل ما نخسر التسجيل بالكامل
+          try {
+            await rawFile.copy(outputPath);
+            await rawFile.delete();
+          } catch (_) {}
+          await showSavedNotification('$name (بدون ستامب — تحقق من الفيديو)');
+        }
+      }
+    } catch (_) {
+      // أي خطأ غير متوقع — نحاول حفظ الخام كحد أدنى
+      try {
+        final dir = await _recordingsDir();
+        final fallbackName =
+            'dashcam_${_fileFormat.format(DateTime.now())}_raw.mp4';
+        await rawFile.copy('${dir.path}/$fallbackName');
+        await rawFile.delete();
+      } catch (_) {}
+    } finally {
+      try {
+        if (cmdFile != null && await cmdFile.exists()) await cmdFile.delete();
+      } catch (_) {}
+      if (mounted) {
+        setState(() {
+          _queueLength = (_queueLength - 1).clamp(0, 999);
+          if (_queueLength == 0) _processing = ProcessingState.idle;
+        });
+      }
+      await _loadRecordings();
+    }
+  }
+
+  Future<void> _switchCamera() async {
+    if (_cameras.length < 2 || _switchingCamera || _isRecording) return;
+    setState(() => _switchingCamera = true);
+    try {
+      _cameraIndex = (_cameraIndex + 1) % _cameras.length;
+      await _initCamera();
+    } finally {
+      if (mounted) setState(() => _switchingCamera = false);
+    }
+  }
+
+  void _showSnack(String text) {
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text)));
+  }
+
+  String _sizeLabel(int bytes) {
+    final mb = bytes / (1024 * 1024);
+    return '${mb.toStringAsFixed(mb >= 100 ? 0 : 1)} MB';
   }
 
   @override
   Widget build(BuildContext context) {
-    final body = _loading
-        ? const Center(child: CircularProgressIndicator(color: WC.green))
-        : IndexedStack(
-            index: _tab,
-            children: [
-              _WalkView(
-                tracking: _tracking,
-                targetMinutes: _targetMinutes,
-                elapsedSeconds: _elapsedSeconds,
-                distanceMeters: _distanceMeters,
-                averageSpeedKmh: _averageSpeedKmh,
-                progress: _progress,
-                gpsStatus: _gpsStatus,
-                streakDays: _streakDays,
-                onTargetChanged: (value) => setState(() => _targetMinutes = value),
-                onStart: _startWalk,
-                onStop: () => _stopWalk(),
-              ),
-              _StatsView(
-                sessions: _orderedSessions,
-                weekly: _lastSevenDays,
-                totalMinutes: _totalMinutes,
-                totalDistanceKm: _totalDistanceKm,
-                streakDays: _streakDays,
-              ),
-              _BadgesView(sessionCount: _sessions.length, streakDays: _streakDays),
-              const _DeveloperContactView(),
-            ],
-          );
-
     return Scaffold(
-      appBar: AppBar(
-        title: Row(
+      backgroundColor: DashColors.bg,
+      body: SafeArea(
+        child: Column(
           children: [
-            Container(
-              width: 32, height: 32,
-              decoration: BoxDecoration(
-                gradient: WC.heroGrad,
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: const Icon(Icons.directions_walk_rounded, color: Colors.white, size: 18),
-            ),
-            const SizedBox(width: 10),
-            const Text('رفيق المشي'),
+            _buildTopBar(),
+            Expanded(child: _buildCameraArea()),
+            _buildBottomPanel(),
           ],
         ),
-        actions: [
-          if (_tracking)
-            Padding(
-              padding: const EdgeInsets.only(left: 12),
-              child: Center(
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                  decoration: BoxDecoration(
-                    color: WC.green.withValues(alpha: 0.12),
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: Row(
-                    children: [
-                      Container(
-                        width: 7, height: 7,
-                        decoration: const BoxDecoration(color: WC.green, shape: BoxShape.circle),
-                      ),
-                      const SizedBox(width: 6),
-                      const Text('نشط', style: TextStyle(color: WC.green, fontSize: 11, fontWeight: FontWeight.w800)),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-        ],
-      ),
-      body: SafeArea(child: body),
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: _tab,
-        onDestinationSelected: (index) => setState(() => _tab = index),
-        destinations: const [
-          NavigationDestination(
-            icon: Icon(Icons.directions_walk_outlined),
-            selectedIcon: Icon(Icons.directions_walk_rounded),
-            label: 'المشي',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.bar_chart_outlined),
-            selectedIcon: Icon(Icons.bar_chart_rounded),
-            label: 'السجل',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.emoji_events_outlined),
-            selectedIcon: Icon(Icons.emoji_events_rounded),
-            label: 'الشارات',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.mail_outline_rounded),
-            selectedIcon: Icon(Icons.mail_rounded),
-            label: 'المطور',
-          ),
-        ],
       ),
     );
   }
 
-  Future<bool> _ensureLocationReady() async {
-    final serviceEnabled = await Geolocator.isLocationServiceEnabled();
-    if (!serviceEnabled) {
-      setState(() => _gpsStatus = 'شغل خدمة الموقع من الهاتف');
-      return false;
-    }
-
-    var permission = await Geolocator.checkPermission();
-    if (permission == LocationPermission.denied) {
-      permission = await Geolocator.requestPermission();
-    }
-    if (permission == LocationPermission.denied || permission == LocationPermission.deniedForever) {
-      setState(() => _gpsStatus = 'صلاحية الموقع غير مفعلة');
-      return false;
-    }
-
-    // For continued tracking with the screen locked, Android requires
-    // "Allow all the time" background location access. We politely ask;
-    // if denied, foreground-only tracking still works while app is open.
-    if (permission != LocationPermission.always) {
-      final bgStatus = await Permission.locationAlways.status;
-      if (!bgStatus.isGranted) {
-        await Permission.locationAlways.request();
-      }
-    }
-
-    // Notification permission needed on Android 13+ for the silent
-    // foreground-service notification.
-    final notifStatus = await Permission.notification.status;
-    if (!notifStatus.isGranted) {
-      await Permission.notification.request();
-    }
-
-    return true;
-  }
-
-  Future<void> _startWalk() async {
-    if (_tracking) return;
-    final ready = await _ensureLocationReady();
-    if (!ready) return;
-
-    setState(() {
-      _tracking = true;
-      _elapsedSeconds = 0;
-      _distanceMeters = 0;
-      _gpsStatus = 'جاري التقاط GPS';
-    });
-
-    if (_serviceReady) {
-      final running = await _service.isRunning();
-      if (!running) {
-        await _service.startService();
-      }
-      _service.invoke('startTracking', {'targetMinutes': _targetMinutes});
-    }
-  }
-
-  Future<void> _stopWalk({bool autoCompleted = false}) async {
-    if (!_tracking) return;
-
-    final completedSeconds = _elapsedSeconds;
-    final completedDistance = _distanceMeters;
-
-    if (_serviceReady) {
-      _service.invoke('stopTracking', {});
-      _service.invoke('stopService', {});
-    }
-
-    setState(() {
-      _tracking = false;
-      _gpsStatus = autoCompleted ? 'أحسنت، اكتمل التحدي' : 'تم حفظ الجلسة';
-    });
-
-    if (completedSeconds >= 60 || completedDistance >= 20) {
-      final session = WalkSession(
-        id: DateTime.now().microsecondsSinceEpoch.toString(),
-        date: DateTime.now(),
-        targetMinutes: _targetMinutes,
-        durationSeconds: completedSeconds,
-        distanceMeters: completedDistance,
-      );
-      setState(() => _sessions.add(session));
-      await _saveSessions();
-      await SystemSound.play(SystemSoundType.alert);
-    }
-  }
-}
-
-// ─────────────────────────── WALK VIEW ───────────────────────────
-class _WalkView extends StatelessWidget {
-  const _WalkView({
-    required this.tracking,
-    required this.targetMinutes,
-    required this.elapsedSeconds,
-    required this.distanceMeters,
-    required this.averageSpeedKmh,
-    required this.progress,
-    required this.gpsStatus,
-    required this.streakDays,
-    required this.onTargetChanged,
-    required this.onStart,
-    required this.onStop,
-  });
-
-  final bool tracking;
-  final int targetMinutes;
-  final int elapsedSeconds;
-  final double distanceMeters;
-  final double averageSpeedKmh;
-  final double progress;
-  final String gpsStatus;
-  final int streakDays;
-  final ValueChanged<int> onTargetChanged;
-  final VoidCallback onStart;
-  final VoidCallback onStop;
-
-  static const List<int> _presets = [5, 10, 15, 20, 30, 45];
-
-  @override
-  Widget build(BuildContext context) {
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
-      children: [
-        Container(
-          padding: const EdgeInsets.all(22),
-          decoration: BoxDecoration(
-            gradient: WC.timerGrad,
-            borderRadius: BorderRadius.circular(26),
-            boxShadow: [
-              BoxShadow(color: WC.green.withValues(alpha: 0.25), blurRadius: 24, offset: const Offset(0, 10)),
-            ],
-          ),
-          child: Column(
-            children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.16),
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          tracking ? Icons.satellite_alt_rounded : Icons.gps_fixed_rounded,
-                          size: 14, color: Colors.white,
-                        ),
-                        const SizedBox(width: 6),
-                        Text(gpsStatus, style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w700)),
-                      ],
-                    ),
-                  ),
-                  if (streakDays > 0)
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                      decoration: BoxDecoration(
-                        color: WC.orange.withValues(alpha: 0.85),
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const Icon(Icons.local_fire_department_rounded, size: 14, color: Colors.white),
-                          const SizedBox(width: 4),
-                          Text('$streakDays', style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w900)),
-                        ],
-                      ),
-                    ),
-                ],
-              ),
-              const SizedBox(height: 22),
-              SizedBox(
-                width: 220, height: 220,
-                child: Stack(
-                  alignment: Alignment.center,
-                  children: [
-                    SizedBox(
-                      width: 220, height: 220,
-                      child: CircularProgressIndicator(
-                        value: progress == 0 ? null : progress,
-                        strokeWidth: 12,
-                        backgroundColor: Colors.white.withValues(alpha: 0.18),
-                        valueColor: const AlwaysStoppedAnimation(Colors.white),
-                      ),
-                    ),
-                    Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          formatDuration(elapsedSeconds),
-                          style: const TextStyle(color: Colors.white, fontSize: 40, fontWeight: FontWeight.w900, letterSpacing: 1),
-                        ),
-                        const SizedBox(height: 4),
-                        Text('الهدف: $targetMinutes دقيقة', style: const TextStyle(color: Colors.white70, fontSize: 13)),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 22),
-              Row(
-                children: [
-                  Expanded(child: _heroStat(Icons.route_rounded, formatDistance(distanceMeters), 'المسافة')),
-                  Container(width: 1, height: 36, color: Colors.white24),
-                  Expanded(child: _heroStat(Icons.speed_rounded, '${averageSpeedKmh.toStringAsFixed(1)} كم/س', 'السرعة')),
-                ],
-              ),
-            ],
-          ),
-        ),
-
-        const SizedBox(height: 18),
-
-        if (!tracking) ...[
-          const Text('اختر هدف الوقت', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w900, color: WC.text)),
-          const SizedBox(height: 10),
-          Wrap(
-            spacing: 8, runSpacing: 8,
-            children: _presets.map((minutes) {
-              final selected = minutes == targetMinutes;
-              return GestureDetector(
-                onTap: () => onTargetChanged(minutes),
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 200),
-                  padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
-                  decoration: BoxDecoration(
-                    color: selected ? WC.green : WC.surface,
-                    borderRadius: BorderRadius.circular(14),
-                    border: Border.all(color: selected ? WC.green : WC.border, width: 1.4),
-                  ),
-                  child: Text(
-                    '$minutes د',
-                    style: TextStyle(
-                      color: selected ? Colors.white : WC.text,
-                      fontWeight: FontWeight.w800,
-                      fontSize: 14,
-                    ),
-                  ),
-                ),
-              );
-            }).toList(),
-          ),
-          const SizedBox(height: 22),
-        ],
-
-        SizedBox(
-          width: double.infinity,
-          child: tracking
-              ? FilledButton.icon(
-                  onPressed: onStop,
-                  style: FilledButton.styleFrom(backgroundColor: WC.orange),
-                  icon: const Icon(Icons.stop_circle_rounded),
-                  label: const Text('إيقاف الجلسة وحفظها', style: TextStyle(fontSize: 15)),
-                )
-              : FilledButton.icon(
-                  onPressed: onStart,
-                  icon: const Icon(Icons.play_circle_fill_rounded),
-                  label: const Text('ابدأ المشي الآن', style: TextStyle(fontSize: 15)),
-                ),
-        ),
-
-        const SizedBox(height: 18),
-
-        Container(
-          padding: const EdgeInsets.all(14),
-          decoration: BoxDecoration(
-            color: WC.blue.withValues(alpha: 0.08),
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: WC.blue.withValues(alpha: 0.18)),
-          ),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Icon(Icons.info_rounded, color: WC.blue, size: 18),
-              const SizedBox(width: 10),
-              const Expanded(
-                child: Text(
-                  'يستمر التتبع حتى عند قفل الشاشة بفضل إشعار صامت بسيط يطلبه نظام أندرويد. لن تسمع له صوتاً أو رنيناً.',
-                  style: TextStyle(color: WC.muted, fontSize: 12, height: 1.5),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _heroStat(IconData icon, String value, String label) {
-    return Column(
-      children: [
-        Icon(icon, color: Colors.white, size: 20),
-        const SizedBox(height: 6),
-        Text(value, style: const TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.w900)),
-        const SizedBox(height: 2),
-        Text(label, style: const TextStyle(color: Colors.white70, fontSize: 11)),
-      ],
-    );
-  }
-}
-
-// ─────────────────────────── STATS VIEW ──────────────────────────
-class _StatsView extends StatelessWidget {
-  const _StatsView({
-    required this.sessions,
-    required this.weekly,
-    required this.totalMinutes,
-    required this.totalDistanceKm,
-    required this.streakDays,
-  });
-
-  final List<WalkSession> sessions;
-  final List<DailyWalkSummary> weekly;
-  final int totalMinutes;
-  final double totalDistanceKm;
-  final int streakDays;
-
-  @override
-  Widget build(BuildContext context) {
-    final maxSeconds = weekly.fold<int>(1, (max, day) => day.durationSeconds > max ? day.durationSeconds : max);
-
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
-      children: [
-        Row(children: [
-          Expanded(child: _statCard('إجمالي الدقائق', '$totalMinutes', Icons.timer_rounded, WC.green)),
-          const SizedBox(width: 10),
-          Expanded(child: _statCard('المسافة الكلية', '${totalDistanceKm.toStringAsFixed(1)} كم', Icons.route_rounded, WC.blue)),
-          const SizedBox(width: 10),
-          Expanded(child: _statCard('التتابع', '$streakDays يوم', Icons.local_fire_department_rounded, WC.orange)),
-        ]),
-
-        const SizedBox(height: 22),
-
-        const Text('آخر 7 أيام', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900, color: WC.text)),
-        const SizedBox(height: 14),
-
-        Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: WC.card,
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(color: WC.border),
-          ),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: weekly.map((day) {
-              final heightFactor = day.durationSeconds / maxSeconds;
-              final hasWalk = day.durationSeconds > 0;
-              return Expanded(
-                child: Column(
-                  children: [
-                    Text(
-                      hasWalk ? formatDuration(day.durationSeconds) : '-',
-                      style: TextStyle(fontSize: 9, color: hasWalk ? WC.green : WC.hint, fontWeight: FontWeight.w700),
-                    ),
-                    const SizedBox(height: 6),
-                    Container(
-                      height: 90,
-                      alignment: Alignment.bottomCenter,
-                      child: FractionallySizedBox(
-                        heightFactor: hasWalk ? heightFactor.clamp(0.08, 1.0) : 0.04,
-                        child: Container(
-                          width: 18,
-                          decoration: BoxDecoration(
-                            gradient: hasWalk
-                                ? const LinearGradient(colors: [WC.green, WC.teal], begin: Alignment.bottomCenter, end: Alignment.topCenter)
-                                : null,
-                            color: hasWalk ? null : WC.border,
-                            borderRadius: BorderRadius.circular(6),
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    Text(formatDayLabel(day.date), style: const TextStyle(fontSize: 10, color: WC.muted)),
-                  ],
-                ),
-              );
-            }).toList(),
-          ),
-        ),
-
-        const SizedBox(height: 24),
-
-        const Text('سجل الجلسات', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900, color: WC.text)),
-        const SizedBox(height: 12),
-
-        if (sessions.isEmpty)
-          Container(
-            padding: const EdgeInsets.all(28),
-            decoration: BoxDecoration(
-              color: WC.card,
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: WC.border),
-            ),
-            child: Column(
-              children: [
-                Icon(Icons.directions_walk_rounded, size: 44, color: WC.green.withValues(alpha: 0.4)),
-                const SizedBox(height: 12),
-                const Text('لا توجد جلسات بعد', style: TextStyle(fontWeight: FontWeight.w800)),
-                const SizedBox(height: 4),
-                const Text('ابدأ أول مشي لك من تبويب المشي', style: TextStyle(color: WC.muted, fontSize: 12)),
-              ],
-            ),
-          )
-        else
-          ...sessions.map((session) => _sessionTile(session)),
-      ],
-    );
-  }
-
-  Widget _statCard(String title, String value, IconData icon, Color color) {
+  // ── الشريط العلوي ──
+  Widget _buildTopBar() {
     return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: WC.card,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: WC.border),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(icon, color: color, size: 20),
-          const SizedBox(height: 8),
-          Text(value, style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900, color: color)),
-          Text(title, style: const TextStyle(color: WC.muted, fontSize: 10)),
-        ],
-      ),
-    );
-  }
-
-  Widget _sessionTile(WalkSession session) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: WC.card,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: WC.border),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: const BoxDecoration(
+        color: DashColors.panel,
+        border: Border(bottom: BorderSide(color: DashColors.panelBorder)),
       ),
       child: Row(
         children: [
           Container(
-            width: 40, height: 40,
+            width: 10,
+            height: 10,
             decoration: BoxDecoration(
-              color: WC.green.withValues(alpha: 0.12),
-              borderRadius: BorderRadius.circular(12),
+              shape: BoxShape.circle,
+              color: _isRecording ? DashColors.red : DashColors.textDim,
+              boxShadow: _isRecording
+                  ? [BoxShadow(color: DashColors.red.withValues(alpha: 0.6), blurRadius: 8)]
+                  : null,
             ),
-            child: const Icon(Icons.directions_walk_rounded, color: WC.green, size: 20),
           ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  '${session.date.year}/${session.date.month}/${session.date.day} • ${formatDayLabel(session.date)}',
-                  style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  '${formatDuration(session.durationSeconds)} • ${formatDistance(session.distanceMeters)} • ${session.averageSpeedKmh.toStringAsFixed(1)} كم/س',
-                  style: const TextStyle(color: WC.muted, fontSize: 11),
-                ),
-              ],
+          const SizedBox(width: 8),
+          Text(
+            _isRecording ? 'جاري التسجيل' : 'جاهز',
+            style: TextStyle(
+              color: _isRecording ? DashColors.red : DashColors.textDim,
+              fontWeight: FontWeight.w800,
+              fontSize: 13,
             ),
+          ),
+          const Spacer(),
+          if (_processing == ProcessingState.encoding) ...[
+            const SizedBox(
+              width: 14,
+              height: 14,
+              child: CircularProgressIndicator(strokeWidth: 2, color: DashColors.amber),
+            ),
+            const SizedBox(width: 6),
+            Text(
+              'معالجة الستامب${_queueLength > 1 ? ' ($_queueLength)' : ''}',
+              style: const TextStyle(color: DashColors.amber, fontSize: 12, fontWeight: FontWeight.w700),
+            ),
+            const SizedBox(width: 12),
+          ],
+          IconButton(
+            tooltip: 'تبديل الكاميرا',
+            onPressed: _switchCamera,
+            icon: const Icon(Icons.cameraswitch_rounded, color: DashColors.textBright, size: 22),
+          ),
+          IconButton(
+            tooltip: 'الإعدادات',
+            onPressed: _openSettings,
+            icon: const Icon(Icons.tune_rounded, color: DashColors.textBright, size: 22),
           ),
         ],
       ),
     );
   }
-}
 
-// ─────────────────────────── BADGES VIEW ─────────────────────────
-class _BadgesView extends StatelessWidget {
-  const _BadgesView({required this.sessionCount, required this.streakDays});
-
-  final int sessionCount;
-  final int streakDays;
-
-  @override
-  Widget build(BuildContext context) {
-    final badges = <BadgeInfo>[
-      BadgeInfo('الخطوة الأولى', 'أكمل أول جلسة مشي', sessionCount >= 1, Icons.flag_circle_rounded, WC.green),
-      BadgeInfo('خمس جلسات', 'أكمل 5 جلسات مشي', sessionCount >= 5, Icons.looks_5_rounded, WC.blue),
-      BadgeInfo('عشر جلسات', 'أكمل 10 جلسات مشي', sessionCount >= 10, Icons.looks_one_rounded, WC.violet),
-      BadgeInfo('25 جلسة', 'أكمل 25 جلسة مشي', sessionCount >= 25, Icons.military_tech_rounded, WC.amber),
-      BadgeInfo('3 أيام متتالية', 'حافظ على التتابع 3 أيام', streakDays >= 3, Icons.local_fire_department_rounded, WC.orange),
-      BadgeInfo('7 أيام متتالية', 'حافظ على التتابع أسبوعاً كاملاً', streakDays >= 7, Icons.whatshot_rounded, WC.orange),
-      BadgeInfo('14 يوماً متتالياً', 'أسبوعان من الالتزام', streakDays >= 14, Icons.bolt_rounded, WC.amber),
-      BadgeInfo('30 يوماً متتالياً', 'شهر كامل من المشي اليومي', streakDays >= 30, Icons.workspace_premium_rounded, WC.violet),
-    ];
-
-    final unlockedCount = badges.where((badge) => badge.unlocked).length;
-
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
-      children: [
-        Container(
-          padding: const EdgeInsets.all(20),
-          decoration: BoxDecoration(
-            gradient: WC.heroGrad,
-            borderRadius: BorderRadius.circular(22),
-          ),
-          child: Row(
+  // ── منطقة المعاينة الحية ──
+  Widget _buildCameraArea() {
+    if (_error != null) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
             children: [
-              const Icon(Icons.emoji_events_rounded, color: Colors.white, size: 38),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('$unlockedCount من ${badges.length} شارة',
-                      style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w900)),
-                    const SizedBox(height: 4),
-                    const Text('استمر بالمشي لفتح المزيد', style: TextStyle(color: Colors.white70, fontSize: 12)),
-                  ],
-                ),
-              ),
+              const Icon(Icons.videocam_off_rounded, color: DashColors.red, size: 48),
+              const SizedBox(height: 12),
+              Text(_error!, textAlign: TextAlign.center, style: const TextStyle(color: DashColors.textBright)),
+              const SizedBox(height: 16),
+              FilledButton(onPressed: _boot, child: const Text('إعادة المحاولة')),
             ],
           ),
         ),
-        const SizedBox(height: 18),
-        GridView.builder(
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          itemCount: badges.length,
-          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: 2,
-            mainAxisSpacing: 12,
-            crossAxisSpacing: 12,
-            childAspectRatio: 0.95,
+      );
+    }
+
+    if (_initializing || _controller == null || !_controller!.value.isInitialized) {
+      return const Center(child: CircularProgressIndicator(color: DashColors.red));
+    }
+
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        ClipRect(
+          child: FittedBox(
+            fit: BoxFit.cover,
+            child: SizedBox(
+              width: _controller!.value.previewSize?.height ?? 1,
+              height: _controller!.value.previewSize?.width ?? 1,
+              child: CameraPreview(_controller!),
+            ),
           ),
-          itemBuilder: (context, index) {
-            final badge = badges[index];
-            return Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: badge.unlocked ? WC.card : WC.surface,
-                borderRadius: BorderRadius.circular(18),
-                border: Border.all(color: badge.unlocked ? badge.color.withValues(alpha: 0.3) : WC.border),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Container(
-                    width: 44, height: 44,
-                    decoration: BoxDecoration(
-                      color: badge.unlocked ? badge.color.withValues(alpha: 0.14) : WC.hint.withValues(alpha: 0.12),
-                      borderRadius: BorderRadius.circular(14),
-                    ),
-                    child: Icon(
-                      badge.icon,
-                      color: badge.unlocked ? badge.color : WC.hint,
-                      size: 22,
-                    ),
-                  ),
-                  const Spacer(),
-                  Text(badge.title,
-                    style: TextStyle(
-                      fontWeight: FontWeight.w800, fontSize: 13,
-                      color: badge.unlocked ? WC.text : WC.hint,
-                    )),
-                  const SizedBox(height: 3),
-                  Text(badge.description,
-                    style: TextStyle(fontSize: 10, color: badge.unlocked ? WC.muted : WC.hint, height: 1.3)),
-                ],
-              ),
-            );
-          },
         ),
+        // معاينة الستامب على الشاشة الحية (يطابق ما سيُحرق داخل الفيديو)
+        Positioned(
+          left: 14,
+          bottom: 14,
+          child: _LiveStampPreview(
+            text:
+                '${_stampFormat.format(_now)}  |  ${_speedKmh == null ? "GPS --" : "GPS ${_speedKmh!.round()} km/h"}',
+          ),
+        ),
+        if (_switchingCamera)
+          Container(
+            color: Colors.black54,
+            child: const Center(child: CircularProgressIndicator(color: DashColors.red)),
+          ),
       ],
     );
   }
-}
 
-// ─────────────────────────── DEVELOPER CONTACT VIEW ──────────────
-class _DeveloperContactView extends StatefulWidget {
-  const _DeveloperContactView();
-
-  @override
-  State<_DeveloperContactView> createState() => _DeveloperContactViewState();
-}
-
-class _DeveloperContactViewState extends State<_DeveloperContactView> {
-  final _nameController = TextEditingController();
-  final _noteController = TextEditingController();
-
-  @override
-  void dispose() {
-    _nameController.dispose();
-    _noteController.dispose();
-    super.dispose();
-  }
-
-  String _messageBody() {
-    final name = _nameController.text.trim();
-    final note = _noteController.text.trim();
-    return 'اسم المرسل: ${name.isEmpty ? 'غير مذكور' : name}\n\nالملاحظة:\n${note.isEmpty ? 'لم يتم كتابة ملاحظة.' : note}\n\nالتطبيق: رفيق المشي';
-  }
-
-  Future<void> _sendEmail() async {
-    final uri = Uri(
-      scheme: 'mailto',
-      path: developerEmail,
-      queryParameters: {
-        'subject': 'ملاحظة على تطبيق رفيق المشي',
-        'body': _messageBody(),
-      },
-    );
-    try {
-      final opened = await launchUrl(uri, mode: LaunchMode.externalApplication);
-      if (!opened) await _copyMessage();
-    } catch (_) {
-      await _copyMessage();
-    }
-  }
-
-  Future<void> _copyMessage() async {
-    await Clipboard.setData(ClipboardData(text: 'إلى: $developerEmail\n\n${_messageBody()}'));
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: const Text('تم نسخ الرسالة والبريد'),
-        backgroundColor: WC.text,
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+  // ── اللوحة السفلية ──
+  Widget _buildBottomPanel() {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 18),
+      decoration: const BoxDecoration(
+        color: DashColors.panel,
+        border: Border(top: BorderSide(color: DashColors.panelBorder)),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          _SmallIconButton(
+            icon: Icons.video_library_rounded,
+            label: 'المقاطع${_recordings.isNotEmpty ? " (${_recordings.length})" : ""}',
+            onTap: _openGallery,
+          ),
+          GestureDetector(
+            onTap: _isRecording ? _stopRecording : _startRecording,
+            child: Container(
+              width: 76,
+              height: 76,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: _isRecording ? DashColors.red : Colors.transparent,
+                border: Border.all(color: DashColors.red, width: 4),
+              ),
+              child: Center(
+                child: _isRecording
+                    ? Container(
+                        width: 26,
+                        height: 26,
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                      )
+                    : Container(
+                        width: 58,
+                        height: 58,
+                        decoration: const BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: DashColors.red,
+                        ),
+                      ),
+              ),
+            ),
+          ),
+          _SmallIconButton(
+            icon: Icons.info_outline_rounded,
+            label: 'حول',
+            onTap: _openAbout,
+          ),
+        ],
       ),
     );
   }
 
-  @override
-  Widget build(BuildContext context) {
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 24, 16, 32),
-      children: [
-        Container(
-          padding: const EdgeInsets.all(24),
-          decoration: BoxDecoration(
-            gradient: WC.heroGrad,
-            borderRadius: BorderRadius.circular(24),
-          ),
+  // ── الإعدادات ──
+  void _openSettings() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: DashColors.panel,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (_) => StatefulBuilder(
+        builder: (context, setSheetState) => Padding(
+          padding: const EdgeInsets.fromLTRB(20, 20, 20, 32),
           child: Column(
-            children: [
-              Container(
-                width: 70, height: 70,
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.18),
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: const Icon(Icons.code_rounded, color: Colors.white, size: 34),
-              ),
-              const SizedBox(height: 16),
-              const Text('تواصل مع المطور', style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w900)),
-              const SizedBox(height: 6),
-              const Text(
-                'لديك ملاحظة أو اقتراح لتحسين التطبيق؟\nأرسل رسالة مباشرة',
-                textAlign: TextAlign.center,
-                style: TextStyle(color: Colors.white70, fontSize: 13, height: 1.6),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 20),
-
-        Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: WC.card,
-            borderRadius: BorderRadius.circular(18),
-            border: Border.all(color: WC.border),
-          ),
-          child: Row(
-            children: [
-              Container(
-                width: 42, height: 42,
-                decoration: BoxDecoration(
-                  color: WC.blue.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(13),
-                ),
-                child: const Icon(Icons.email_rounded, color: WC.blue, size: 20),
-              ),
-              const SizedBox(width: 12),
-              const Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('البريد الإلكتروني', style: TextStyle(color: WC.muted, fontSize: 11)),
-                    SizedBox(height: 2),
-                    Text(developerEmail, style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13)),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-
-        const SizedBox(height: 16),
-
-        TextField(
-          controller: _nameController,
-          decoration: const InputDecoration(labelText: 'اسمك (اختياري)', prefixIcon: Icon(Icons.person_rounded)),
-        ),
-        const SizedBox(height: 10),
-        TextField(
-          controller: _noteController,
-          minLines: 4,
-          maxLines: 8,
-          decoration: const InputDecoration(
-            labelText: 'رسالتك أو ملاحظتك',
-            alignLabelWithHint: true,
-            prefixIcon: Icon(Icons.edit_note_rounded),
-          ),
-        ),
-
-        const SizedBox(height: 14),
-        FilledButton.icon(
-          onPressed: _sendEmail,
-          icon: const Icon(Icons.send_rounded),
-          label: const Text('إرسال بريد إلكتروني'),
-        ),
-        const SizedBox(height: 10),
-        OutlinedButton.icon(
-          onPressed: _copyMessage,
-          icon: const Icon(Icons.copy_rounded, size: 18),
-          label: const Text('نسخ الرسالة فقط'),
-        ),
-
-        const SizedBox(height: 24),
-        Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: WC.surface,
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: WC.border),
-          ),
-          child: const Column(
+            mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Row(children: [
-                Icon(Icons.info_outline_rounded, color: WC.muted, size: 16),
-                SizedBox(width: 8),
-                Text('عن التطبيق', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13)),
-              ]),
-              SizedBox(height: 8),
-              Text(
-                'رفيق المشي v2.0\nتتبع GPS حتى مع قفل الشاشة • إحصائيات أسبوعية • شارات تحفيزية • يعمل بدون إنترنت',
-                style: TextStyle(color: WC.muted, fontSize: 12, height: 1.6),
+              const Text('الإعدادات',
+                  style: TextStyle(color: DashColors.textBright, fontSize: 18, fontWeight: FontWeight.w900)),
+              const SizedBox(height: 18),
+              Text('مدة كل مقطع: $_segmentMinutes دقيقة',
+                  style: const TextStyle(color: DashColors.textBright, fontWeight: FontWeight.w700)),
+              Slider(
+                value: _segmentMinutes.toDouble(),
+                min: 1,
+                max: 10,
+                divisions: 9,
+                activeColor: DashColors.red,
+                inactiveColor: DashColors.panelBorder,
+                label: '$_segmentMinutes',
+                onChanged: (v) {
+                  setSheetState(() => _segmentMinutes = v.round());
+                  setState(() {});
+                },
+              ),
+              const SizedBox(height: 8),
+              Text('عدد المقاطع المحتفظ بها: $_keepCount',
+                  style: const TextStyle(color: DashColors.textBright, fontWeight: FontWeight.w700)),
+              Slider(
+                value: _keepCount.toDouble(),
+                min: 5,
+                max: 100,
+                divisions: 19,
+                activeColor: DashColors.red,
+                inactiveColor: DashColors.panelBorder,
+                label: '$_keepCount',
+                onChanged: (v) {
+                  setSheetState(() => _keepCount = v.round());
+                  setState(() {});
+                },
+              ),
+              const SizedBox(height: 12),
+              const Text(
+                'الفيديوهات الزائدة عن هذا العدد تُحذف تلقائياً (الأقدم أولاً) للحفاظ على مساحة التخزين.',
+                style: TextStyle(color: DashColors.textDim, fontSize: 12),
               ),
             ],
           ),
         ),
-      ],
+      ),
+    );
+  }
+
+  void _openAbout() {
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        backgroundColor: DashColors.panel,
+        title: const Text('داش كام بدون صوت', style: TextStyle(color: DashColors.textBright)),
+        content: const Text(
+          'تسجيل فيديو مستمر بدون صوت، مع طباعة التاريخ والوقت والسرعة فعلياً داخل الفيديو المحفوظ.\n\nالإصدار 1.1.0',
+          style: TextStyle(color: DashColors.textDim),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('إغلاق')),
+        ],
+      ),
+    );
+  }
+
+  // ── المعرض ──
+  Future<void> _openGallery() async {
+    await _loadRecordings();
+    if (!mounted) return;
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => _GalleryPage(
+          recordings: _recordings,
+          listFormat: _listFormat,
+          sizeLabel: _sizeLabel,
+          onDelete: (item) async {
+            try {
+              await item.file.delete();
+            } catch (_) {}
+            await _loadRecordings();
+          },
+          onShare: (item) => SharePlus.instance.share(
+            ShareParams(files: [XFile(item.file.path)], text: 'مقطع داش كام'),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// معاينة الستامب الحية فوق الكاميرا — خط أحمر صغير أسفل الشاشة
+// ═══════════════════════════════════════════════════════════════════════════
+class _LiveStampPreview extends StatelessWidget {
+  const _LiveStampPreview({required this.text});
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: 0.45),
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Text(
+        text,
+        style: const TextStyle(
+          color: DashColors.red,
+          fontSize: 12,
+          fontWeight: FontWeight.w700,
+          fontFamily: 'monospace',
+          letterSpacing: 0.2,
+          shadows: [Shadow(color: Colors.black, blurRadius: 3)],
+        ),
+      ),
+    );
+  }
+}
+
+class _SmallIconButton extends StatelessWidget {
+  const _SmallIconButton({required this.icon, required this.label, required this.onTap});
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: Padding(
+        padding: const EdgeInsets.all(8),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, color: DashColors.textBright, size: 24),
+            const SizedBox(height: 4),
+            Text(label, style: const TextStyle(color: DashColors.textDim, fontSize: 11)),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// صفحة المعرض — قائمة المقاطع المحفوظة
+// ═══════════════════════════════════════════════════════════════════════════
+class _GalleryPage extends StatefulWidget {
+  const _GalleryPage({
+    required this.recordings,
+    required this.listFormat,
+    required this.sizeLabel,
+    required this.onDelete,
+    required this.onShare,
+  });
+
+  final List<RecordingItem> recordings;
+  final DateFormat listFormat;
+  final String Function(int) sizeLabel;
+  final Future<void> Function(RecordingItem) onDelete;
+  final void Function(RecordingItem) onShare;
+
+  @override
+  State<_GalleryPage> createState() => _GalleryPageState();
+}
+
+class _GalleryPageState extends State<_GalleryPage> {
+  late List<RecordingItem> _items;
+
+  @override
+  void initState() {
+    super.initState();
+    _items = widget.recordings;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: DashColors.bg,
+      appBar: AppBar(title: const Text('المقاطع المحفوظة')),
+      body: _items.isEmpty
+          ? const Center(
+              child: Text('لا توجد مقاطع محفوظة بعد', style: TextStyle(color: DashColors.textDim)),
+            )
+          : ListView.separated(
+              padding: const EdgeInsets.all(14),
+              itemCount: _items.length,
+              separatorBuilder: (_, __) => const SizedBox(height: 10),
+              itemBuilder: (context, i) {
+                final item = _items[i];
+                return Container(
+                  decoration: BoxDecoration(
+                    color: DashColors.panel,
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: DashColors.panelBorder),
+                  ),
+                  child: ListTile(
+                    leading: const CircleAvatar(
+                      backgroundColor: DashColors.bg,
+                      child: Icon(Icons.movie_rounded, color: DashColors.red),
+                    ),
+                    title: Text(
+                      widget.listFormat.format(item.modified),
+                      style: const TextStyle(color: DashColors.textBright, fontWeight: FontWeight.w700),
+                    ),
+                    subtitle: Text(
+                      widget.sizeLabel(item.size),
+                      style: const TextStyle(color: DashColors.textDim),
+                    ),
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => _PlayerPage(file: item.file)),
+                    ),
+                    trailing: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        IconButton(
+                          icon: const Icon(Icons.share_rounded, color: DashColors.textDim),
+                          onPressed: () => widget.onShare(item),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.delete_rounded, color: DashColors.red),
+                          onPressed: () async {
+                            final confirm = await showDialog<bool>(
+                              context: context,
+                              builder: (_) => AlertDialog(
+                                backgroundColor: DashColors.panel,
+                                title: const Text('حذف المقطع؟', style: TextStyle(color: DashColors.textBright)),
+                                content: const Text('لا يمكن التراجع عن هذا الإجراء.',
+                                    style: TextStyle(color: DashColors.textDim)),
+                                actions: [
+                                  TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('إلغاء')),
+                                  TextButton(
+                                    onPressed: () => Navigator.pop(context, true),
+                                    child: const Text('حذف', style: TextStyle(color: DashColors.red)),
+                                  ),
+                                ],
+                              ),
+                            );
+                            if (confirm == true) {
+                              await widget.onDelete(item);
+                              setState(() => _items.removeWhere((e) => e.file.path == item.file.path));
+                            }
+                          },
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              },
+            ),
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// مشغّل الفيديو
+// ═══════════════════════════════════════════════════════════════════════════
+class _PlayerPage extends StatefulWidget {
+  const _PlayerPage({required this.file});
+  final File file;
+
+  @override
+  State<_PlayerPage> createState() => _PlayerPageState();
+}
+
+class _PlayerPageState extends State<_PlayerPage> {
+  late final VideoPlayerController _controller;
+  bool _ready = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = VideoPlayerController.file(widget.file)
+      ..initialize().then((_) {
+        if (mounted) setState(() => _ready = true);
+        _controller.play();
+      });
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.black,
+      appBar: AppBar(backgroundColor: Colors.black, foregroundColor: Colors.white),
+      body: Center(
+        child: _ready
+            ? AspectRatio(
+                aspectRatio: _controller.value.aspectRatio,
+                child: VideoPlayer(_controller),
+              )
+            : const CircularProgressIndicator(color: DashColors.red),
+      ),
+      floatingActionButton: _ready
+          ? FloatingActionButton(
+              backgroundColor: DashColors.red,
+              onPressed: () => setState(() {
+                _controller.value.isPlaying ? _controller.pause() : _controller.play();
+              }),
+              child: Icon(_controller.value.isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded),
+            )
+          : null,
     );
   }
 }
