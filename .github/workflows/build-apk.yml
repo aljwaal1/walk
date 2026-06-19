@@ -43,71 +43,73 @@ jobs:
       - name: Get packages
         run: flutter pub get
 
-      - name: Configure Android app (minSdk + applicationId)
+      - name: Configure Android app
         shell: bash
         run: |
           set -e
           if [ -f android/app/build.gradle.kts ]; then
-            sed -i 's/applicationId = \".*\"/applicationId = \"com.explapp.walkingcompanion\"/g' android/app/build.gradle.kts
+            sed -i 's/applicationId = ".*"/applicationId = "com.explapp.walkingcompanion"/g' android/app/build.gradle.kts
             sed -i 's/minSdk = flutter.minSdkVersion/minSdk = 23/g' android/app/build.gradle.kts
             sed -i 's/minSdk = [0-9][0-9]*/minSdk = 23/g' android/app/build.gradle.kts
           fi
           if [ -f android/app/build.gradle ]; then
-            sed -i 's/applicationId \".*\"/applicationId \"com.explapp.walkingcompanion\"/g' android/app/build.gradle
+            sed -i 's/applicationId ".*"/applicationId "com.explapp.walkingcompanion"/g' android/app/build.gradle
             sed -i 's/minSdkVersion flutter.minSdkVersion/minSdkVersion 23/g' android/app/build.gradle
             sed -i 's/minSdkVersion [0-9][0-9]*/minSdkVersion 23/g' android/app/build.gradle
           fi
 
-      - name: Enable Android desugaring
+      - name: Enable desugaring
         shell: bash
         run: |
           set -e
           if [ -f android/app/build.gradle.kts ]; then
             python3 - <<'PYKTS'
-from pathlib import Path
-p = Path('android/app/build.gradle.kts')
-s = p.read_text()
-if 'isCoreLibraryDesugaringEnabled = true' not in s:
-    if 'compileOptions {' in s:
-        s = s.replace('compileOptions {', 'compileOptions {\n        isCoreLibraryDesugaringEnabled = true', 1)
-    else:
-        s = s.replace('android {', 'android {\n    compileOptions {\n        isCoreLibraryDesugaringEnabled = true\n        sourceCompatibility = JavaVersion.VERSION_17\n        targetCompatibility = JavaVersion.VERSION_17\n    }', 1)
-if 'coreLibraryDesugaring("com.android.tools:desugar_jdk_libs' not in s:
-    s += '\n\ndependencies {\n    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")\n}\n'
-p.write_text(s)
-PYKTS
+          from pathlib import Path
+          p = Path('android/app/build.gradle.kts')
+          s = p.read_text()
+          if 'isCoreLibraryDesugaringEnabled = true' not in s:
+              if 'compileOptions {' in s:
+                  s = s.replace('compileOptions {', 'compileOptions {\n        isCoreLibraryDesugaringEnabled = true', 1)
+              else:
+                  s = s.replace('android {', 'android {\n    compileOptions {\n        isCoreLibraryDesugaringEnabled = true\n        sourceCompatibility = JavaVersion.VERSION_17\n        targetCompatibility = JavaVersion.VERSION_17\n    }', 1)
+          if 'coreLibraryDesugaring("com.android.tools:desugar_jdk_libs' not in s:
+              s += '\n\ndependencies {\n    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")\n}\n'
+          p.write_text(s)
+          PYKTS
           fi
           if [ -f android/app/build.gradle ]; then
             python3 - <<'PYGRADLE'
-from pathlib import Path
-p = Path('android/app/build.gradle')
-s = p.read_text()
-if 'coreLibraryDesugaringEnabled true' not in s:
-    if 'compileOptions {' in s:
-        s = s.replace('compileOptions {', 'compileOptions {\n        coreLibraryDesugaringEnabled true', 1)
-    else:
-        s = s.replace('android {', 'android {\n    compileOptions {\n        coreLibraryDesugaringEnabled true\n        sourceCompatibility JavaVersion.VERSION_17\n        targetCompatibility JavaVersion.VERSION_17\n    }', 1)
-if "coreLibraryDesugaring 'com.android.tools:desugar_jdk_libs" not in s:
-    s += "\n\ndependencies {\n    coreLibraryDesugaring 'com.android.tools:desugar_jdk_libs:2.1.4'\n}\n"
-p.write_text(s)
-PYGRADLE
+          from pathlib import Path
+          p = Path('android/app/build.gradle')
+          s = p.read_text()
+          if 'coreLibraryDesugaringEnabled true' not in s:
+              if 'compileOptions {' in s:
+                  s = s.replace('compileOptions {', 'compileOptions {\n        coreLibraryDesugaringEnabled true', 1)
+              else:
+                  s = s.replace('android {', 'android {\n    compileOptions {\n        coreLibraryDesugaringEnabled true\n        sourceCompatibility JavaVersion.VERSION_17\n        targetCompatibility JavaVersion.VERSION_17\n    }', 1)
+          if "coreLibraryDesugaring 'com.android.tools:desugar_jdk_libs" not in s:
+              s += "\n\ndependencies {\n    coreLibraryDesugaring 'com.android.tools:desugar_jdk_libs:2.1.4'\n}\n"
+          p.write_text(s)
+          PYGRADLE
           fi
 
-      - name: Write AndroidManifest (location + foreground service + notifications)
+      - name: Write AndroidManifest
         shell: bash
         run: |
-          cat > android/app/src/main/AndroidManifest.xml <<'MANIFEST'
-          <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-                    xmlns:tools="http://schemas.android.com/tools">
-              <uses-permission android:name="android.permission.INTERNET"/>
-              <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
-              <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
-              <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION"/>
-              <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
-              <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION"/>
-              <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
-              <uses-permission android:name="android.permission.WAKE_LOCK"/>
-              <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
+          set -e
+          python3 - <<'PYMANIFEST'
+          from pathlib import Path
+          manifest = '''<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+              xmlns:tools="http://schemas.android.com/tools">
+              <uses-permission android:name="android.permission.INTERNET" />
+              <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+              <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+              <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
+              <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+              <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
+              <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+              <uses-permission android:name="android.permission.WAKE_LOCK" />
+              <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
               <queries>
                   <intent>
@@ -154,18 +156,20 @@ PYGRADLE
                       tools:replace="android:exported" />
               </application>
           </manifest>
-          MANIFEST
+          '''
+          Path('android/app/src/main/AndroidManifest.xml').write_text(manifest)
+          PYMANIFEST
 
       - name: Analyze
-        run: |
-          rm -rf test
-          flutter analyze --no-fatal-infos --no-fatal-warnings
+        run: flutter analyze --no-fatal-infos --no-fatal-warnings
 
       - name: Build release APK
         run: flutter build apk --release --no-tree-shake-icons
 
       - name: Copy APK to repository folder
+        shell: bash
         run: |
+          set -e
           mkdir -p apk
           cp build/app/outputs/flutter-apk/app-release.apk apk/walking-companion.apk
           APK_URL="https://github.com/${GITHUB_REPOSITORY}/raw/${GITHUB_REF_NAME}/apk/walking-companion.apk"
@@ -185,6 +189,7 @@ PYGRADLE
       - name: Commit APK
         shell: bash
         run: |
+          set -e
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add apk/walking-companion.apk DOWNLOAD_APK.md
