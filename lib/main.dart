@@ -1,27 +1,66 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
+import 'dart:ui';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_background_service/flutter_background_service.dart';
+import 'package:flutter_background_service_android/flutter_background_service_android.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 const developerEmail = 'fastunlocked2017@gmail.com';
+
+// ─────────────────────────── COLORS (light, vibrant, sport feel) ──
+class WC {
+  // Backgrounds
+  static const Color bg        = Color(0xFFF7FAF7);
+  static const Color surface   = Color(0xFFFFFFFF);
+  static const Color card      = Color(0xFFFFFFFF);
+  static const Color border    = Color(0xFFE6EEE3);
+
+  // Text
+  static const Color text      = Color(0xFF152019);
+  static const Color muted     = Color(0xFF647266);
+  static const Color hint      = Color(0xFFA4B2A1);
+
+  // Brand accents (vibrant sport palette)
+  static const Color green     = Color(0xFF22C55E); // primary action / progress
+  static const Color teal      = Color(0xFF14B8A6); // secondary accent
+  static const Color blue      = Color(0xFF3B82F6); // speed / stats
+  static const Color orange    = Color(0xFFFB923C); // streak / motivation
+  static const Color amber     = Color(0xFFF59E0B); // gps/status warm
+  static const Color violet    = Color(0xFF8B5CF6); // badges
+
+  static const LinearGradient heroGrad = LinearGradient(
+    colors: [Color(0xFF16A34A), Color(0xFF0D9488)],
+    begin: Alignment.topLeft,
+    end: Alignment.bottomRight,
+  );
+
+  static const LinearGradient timerGrad = LinearGradient(
+    colors: [Color(0xFF15803D), Color(0xFF0F766E)],
+    begin: Alignment.topLeft,
+    end: Alignment.bottomRight,
+  );
+}
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
   runApp(const WalkingCompanionApp());
 }
 
+// ─────────────────────────── APP ─────────────────────────────────
 class WalkingCompanionApp extends StatelessWidget {
   const WalkingCompanionApp({super.key});
 
   @override
   Widget build(BuildContext context) {
-    const seed = Color(0xFF3E725D);
     return MaterialApp(
       debugShowCheckedModeBanner: false,
       title: 'رفيق المشي',
@@ -34,47 +73,86 @@ class WalkingCompanionApp extends StatelessWidget {
       ],
       theme: ThemeData(
         useMaterial3: true,
-        scaffoldBackgroundColor: const Color(0xFFF5F7F1),
+        scaffoldBackgroundColor: WC.bg,
+        fontFamily: 'sans-serif',
         colorScheme: ColorScheme.fromSeed(
-          seedColor: seed,
+          seedColor: WC.green,
           brightness: Brightness.light,
-          surface: const Color(0xFFFCFDF8),
+          primary: WC.green,
+          secondary: WC.teal,
+          surface: WC.surface,
         ),
         appBarTheme: const AppBarTheme(
           elevation: 0,
           centerTitle: false,
-          backgroundColor: Color(0xFFF5F7F1),
-          foregroundColor: Color(0xFF203128),
+          backgroundColor: WC.bg,
+          foregroundColor: WC.text,
           systemOverlayStyle: SystemUiOverlayStyle.dark,
+          titleTextStyle: TextStyle(
+            color: WC.text,
+            fontSize: 20,
+            fontWeight: FontWeight.w900,
+            letterSpacing: -0.3,
+          ),
         ),
         cardTheme: CardThemeData(
-          color: const Color(0xFFFCFDF8),
+          color: WC.card,
           elevation: 0,
+          margin: EdgeInsets.zero,
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(8),
-            side: const BorderSide(color: Color(0xFFE3E9DD)),
+            borderRadius: BorderRadius.circular(18),
+            side: const BorderSide(color: WC.border),
+          ),
+        ),
+        filledButtonTheme: FilledButtonThemeData(
+          style: FilledButton.styleFrom(
+            backgroundColor: WC.green,
+            foregroundColor: Colors.white,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            padding: const EdgeInsets.symmetric(vertical: 16),
+            textStyle: const TextStyle(fontWeight: FontWeight.w800, fontSize: 15),
+          ),
+        ),
+        outlinedButtonTheme: OutlinedButtonThemeData(
+          style: OutlinedButton.styleFrom(
+            foregroundColor: WC.text,
+            side: const BorderSide(color: WC.border, width: 1.4),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            padding: const EdgeInsets.symmetric(vertical: 14),
           ),
         ),
         inputDecorationTheme: InputDecorationTheme(
           filled: true,
-          fillColor: Colors.white,
+          fillColor: WC.surface,
+          labelStyle: const TextStyle(color: WC.muted),
           border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(8),
-            borderSide: const BorderSide(color: Color(0xFFDCE5D7)),
+            borderRadius: BorderRadius.circular(14),
+            borderSide: const BorderSide(color: WC.border),
           ),
           enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(8),
-            borderSide: const BorderSide(color: Color(0xFFDCE5D7)),
+            borderRadius: BorderRadius.circular(14),
+            borderSide: const BorderSide(color: WC.border),
           ),
           focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(8),
-            borderSide: const BorderSide(color: seed, width: 1.4),
+            borderRadius: BorderRadius.circular(14),
+            borderSide: const BorderSide(color: WC.green, width: 2),
+          ),
+        ),
+        segmentedButtonTheme: SegmentedButtonThemeData(
+          style: SegmentedButton.styleFrom(
+            backgroundColor: WC.surface,
+            selectedBackgroundColor: WC.green,
+            selectedForegroundColor: Colors.white,
+            foregroundColor: WC.text,
+            side: const BorderSide(color: WC.border),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
           ),
         ),
         navigationBarTheme: NavigationBarThemeData(
-          indicatorColor: seed.withValues(alpha: 0.14),
+          backgroundColor: WC.surface,
+          indicatorColor: WC.green.withValues(alpha: 0.16),
           labelTextStyle: WidgetStateProperty.all(
-            const TextStyle(fontSize: 12, fontWeight: FontWeight.w800),
+            const TextStyle(fontSize: 11, fontWeight: FontWeight.w800),
           ),
         ),
       ),
@@ -86,6 +164,7 @@ class WalkingCompanionApp extends StatelessWidget {
   }
 }
 
+// ─────────────────────────── MODELS ──────────────────────────────
 class WalkSession {
   const WalkSession({
     required this.id,
@@ -127,6 +206,198 @@ class WalkSession {
   }
 }
 
+class DailyWalkSummary {
+  const DailyWalkSummary({
+    required this.date,
+    required this.durationSeconds,
+    required this.distanceMeters,
+  });
+
+  final DateTime date;
+  final int durationSeconds;
+  final double distanceMeters;
+}
+
+class BadgeInfo {
+  const BadgeInfo(this.title, this.description, this.unlocked, this.icon, this.color);
+
+  final String title;
+  final String description;
+  final bool unlocked;
+  final IconData icon;
+  final Color color;
+}
+
+// ─────────────────────────── BACKGROUND SERVICE ──────────────────
+// Keys used to communicate between the UI and the background isolate
+// via SharedPreferences (simple + reliable across process restarts).
+class BgKeys {
+  static const tracking = 'bg_tracking';
+  static const startEpoch = 'bg_start_epoch';
+  static const targetMinutes = 'bg_target_minutes';
+  static const distanceMeters = 'bg_distance_meters';
+  static const lastLat = 'bg_last_lat';
+  static const lastLng = 'bg_last_lng';
+  static const gpsAccuracy = 'bg_gps_accuracy';
+  static const elapsedSeconds = 'bg_elapsed_seconds';
+}
+
+Future<void> initializeBackgroundService() async {
+  final service = FlutterBackgroundService();
+
+  const channel = AndroidNotificationChannel(
+    'walking_companion_tracking',
+    'تتبع المشي',
+    description: 'إشعار صامت يظهر فقط أثناء جلسة مشي نشطة',
+    importance: Importance.low,
+    playSound: false,
+    enableVibration: false,
+    showBadge: false,
+  );
+
+  final notifications = FlutterLocalNotificationsPlugin();
+  await notifications
+      .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
+      ?.createNotificationChannel(channel);
+
+  await service.configure(
+    androidConfiguration: AndroidConfiguration(
+      onStart: onBackgroundServiceStart,
+      autoStart: false,
+      isForegroundMode: true,
+      notificationChannelId: 'walking_companion_tracking',
+      initialNotificationTitle: 'رفيق المشي',
+      initialNotificationContent: 'جاري تجهيز التتبع...',
+      foregroundServiceNotificationId: 5050,
+      foregroundServiceTypes: [AndroidForegroundType.location],
+    ),
+    iosConfiguration: IosConfiguration(
+      autoStart: false,
+      onForeground: onBackgroundServiceStart,
+    ),
+  );
+}
+
+// Entry point that runs inside the background isolate.
+@pragma('vm:entry-point')
+void onBackgroundServiceStart(ServiceInstance service) async {
+  DartPluginRegistrant.ensureInitialized();
+
+  final prefs = await SharedPreferences.getInstance();
+  Position? lastPosition;
+  Timer? ticker;
+  StreamSubscription<Position>? posSub;
+
+  Future<void> stopAll() async {
+    ticker?.cancel();
+    await posSub?.cancel();
+    posSub = null;
+    if (service is AndroidServiceInstance) {
+      service.setAsBackgroundService();
+    }
+  }
+
+  if (service is AndroidServiceInstance) {
+    service.on('setAsForeground').listen((event) {
+      service.setAsForegroundService();
+    });
+    service.on('setAsBackground').listen((event) {
+      service.setAsBackgroundService();
+    });
+  }
+
+  service.on('stopService').listen((event) async {
+    await stopAll();
+    await service.stopSelf();
+  });
+
+  service.on('startTracking').listen((event) async {
+    final targetMinutes = (event?['targetMinutes'] as num?)?.toInt() ?? 10;
+    await prefs.setBool(BgKeys.tracking, true);
+    await prefs.setInt(BgKeys.startEpoch, DateTime.now().millisecondsSinceEpoch);
+    await prefs.setInt(BgKeys.targetMinutes, targetMinutes);
+    await prefs.setDouble(BgKeys.distanceMeters, 0);
+    await prefs.setInt(BgKeys.elapsedSeconds, 0);
+    lastPosition = null;
+
+    ticker?.cancel();
+    ticker = Timer.periodic(const Duration(seconds: 1), (_) async {
+      final startEpoch = prefs.getInt(BgKeys.startEpoch) ?? DateTime.now().millisecondsSinceEpoch;
+      final elapsed = ((DateTime.now().millisecondsSinceEpoch - startEpoch) / 1000).round();
+      await prefs.setInt(BgKeys.elapsedSeconds, elapsed);
+
+      final dist = prefs.getDouble(BgKeys.distanceMeters) ?? 0;
+      final mins = elapsed ~/ 60;
+      final secs = elapsed % 60;
+      final distLabel = dist < 1000 ? '${dist.toStringAsFixed(0)} م' : '${(dist / 1000).toStringAsFixed(2)} كم';
+
+      if (service is AndroidServiceInstance) {
+        service.setForegroundNotificationInfo(
+          title: '🚶 جاري تتبع المشي',
+          content: '${mins.toString().padLeft(2, '0')}:${secs.toString().padLeft(2, '0')} • $distLabel',
+        );
+      }
+
+      service.invoke('tick', {
+        'elapsedSeconds': elapsed,
+        'distanceMeters': dist,
+      });
+
+      if (elapsed >= targetMinutes * 60) {
+        service.invoke('autoComplete', {});
+      }
+    });
+
+    posSub?.cancel();
+    const settings = LocationSettings(accuracy: LocationAccuracy.best, distanceFilter: 3);
+    posSub = Geolocator.getPositionStream(locationSettings: settings).listen((position) async {
+      final tracking = prefs.getBool(BgKeys.tracking) ?? false;
+      if (!tracking) return;
+      if (lastPosition != null) {
+        final meters = Geolocator.distanceBetween(
+          lastPosition!.latitude,
+          lastPosition!.longitude,
+          position.latitude,
+          position.longitude,
+        );
+        if (meters >= 0 && meters < 80) {
+          final current = prefs.getDouble(BgKeys.distanceMeters) ?? 0;
+          await prefs.setDouble(BgKeys.distanceMeters, current + meters);
+        }
+      }
+      lastPosition = position;
+      await prefs.setDouble(BgKeys.lastLat, position.latitude);
+      await prefs.setDouble(BgKeys.lastLng, position.longitude);
+      await prefs.setDouble(BgKeys.gpsAccuracy, position.accuracy);
+      service.invoke('gpsUpdate', {'accuracy': position.accuracy});
+    });
+  });
+
+  service.on('stopTracking').listen((event) async {
+    await prefs.setBool(BgKeys.tracking, false);
+    await stopAll();
+  });
+}
+
+String dayKey(DateTime date) => '${date.year}-${date.month}-${date.day}';
+
+String formatDuration(int totalSeconds) {
+  final minutes = (totalSeconds ~/ 60).toString().padLeft(2, '0');
+  final seconds = (totalSeconds % 60).toString().padLeft(2, '0');
+  return '$minutes:$seconds';
+}
+
+String formatDistance(double meters) {
+  if (meters < 1000) return '${meters.toStringAsFixed(0)} م';
+  return '${(meters / 1000).toStringAsFixed(2)} كم';
+}
+
+String formatDayLabel(DateTime date) {
+  const days = ['الأحد', 'الإثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'];
+  return days[date.weekday % 7];
+}
+
+// ─────────────────────────── HOME SCREEN ─────────────────────────
 class WalkingHomeScreen extends StatefulWidget {
   const WalkingHomeScreen({super.key});
 
@@ -138,7 +409,7 @@ class _WalkingHomeScreenState extends State<WalkingHomeScreen> {
   static const _storageKey = 'walking_companion_sessions_v1';
 
   final List<WalkSession> _sessions = [];
-  final _noteController = TextEditingController();
+  final FlutterBackgroundService _service = FlutterBackgroundService();
 
   int _tab = 0;
   int _targetMinutes = 10;
@@ -146,23 +417,74 @@ class _WalkingHomeScreenState extends State<WalkingHomeScreen> {
   double _distanceMeters = 0;
   bool _tracking = false;
   bool _loading = true;
+  bool _serviceReady = false;
   String _gpsStatus = 'جاهز';
-  Position? _lastPosition;
-  Timer? _timer;
-  StreamSubscription<Position>? _positionSubscription;
+  StreamSubscription? _tickSub;
+  StreamSubscription? _gpsSub;
+  StreamSubscription? _autoCompleteSub;
 
   @override
   void initState() {
     super.initState();
-    _loadSessions();
+    _bootstrap();
   }
 
   @override
   void dispose() {
-    _timer?.cancel();
-    _positionSubscription?.cancel();
-    _noteController.dispose();
+    _tickSub?.cancel();
+    _gpsSub?.cancel();
+    _autoCompleteSub?.cancel();
     super.dispose();
+  }
+
+  Future<void> _bootstrap() async {
+    await _loadSessions();
+    await _initService();
+    await _resumeIfTrackingInBackground();
+    if (mounted) setState(() => _loading = false);
+  }
+
+  Future<void> _initService() async {
+    try {
+      await initializeBackgroundService();
+      _serviceReady = true;
+
+      _tickSub = _service.on('tick').listen((event) {
+        if (!mounted || event == null) return;
+        setState(() {
+          _elapsedSeconds = (event['elapsedSeconds'] as num?)?.toInt() ?? _elapsedSeconds;
+          _distanceMeters = (event['distanceMeters'] as num?)?.toDouble() ?? _distanceMeters;
+        });
+      });
+
+      _gpsSub = _service.on('gpsUpdate').listen((event) {
+        if (!mounted || event == null) return;
+        final acc = (event['accuracy'] as num?)?.toDouble() ?? 0;
+        setState(() => _gpsStatus = 'دقة الموقع ${acc.toStringAsFixed(0)} م');
+      });
+
+      _autoCompleteSub = _service.on('autoComplete').listen((event) {
+        if (!mounted) return;
+        _stopWalk(autoCompleted: true);
+      });
+    } catch (_) {
+      _serviceReady = false;
+    }
+  }
+
+  // If the app process was killed while tracking continued in the
+  // background, restore the UI state from SharedPreferences.
+  Future<void> _resumeIfTrackingInBackground() async {
+    final prefs = await SharedPreferences.getInstance();
+    final tracking = prefs.getBool(BgKeys.tracking) ?? false;
+    if (!tracking) return;
+    setState(() {
+      _tracking = true;
+      _targetMinutes = prefs.getInt(BgKeys.targetMinutes) ?? 10;
+      _elapsedSeconds = prefs.getInt(BgKeys.elapsedSeconds) ?? 0;
+      _distanceMeters = prefs.getDouble(BgKeys.distanceMeters) ?? 0;
+      _gpsStatus = 'جاري التتبع في الخلفية';
+    });
   }
 
   Future<void> _loadSessions() async {
@@ -174,7 +496,6 @@ class _WalkingHomeScreenState extends State<WalkingHomeScreen> {
         ..clear()
         ..addAll(decoded.map((item) => WalkSession.fromJson(item as Map<String, dynamic>)));
     }
-    if (mounted) setState(() => _loading = false);
   }
 
   Future<void> _saveSessions() async {
@@ -233,7 +554,7 @@ class _WalkingHomeScreenState extends State<WalkingHomeScreen> {
   @override
   Widget build(BuildContext context) {
     final body = _loading
-        ? const Center(child: CircularProgressIndicator())
+        ? const Center(child: CircularProgressIndicator(color: WC.green))
         : IndexedStack(
             index: _tab,
             children: [
@@ -248,7 +569,7 @@ class _WalkingHomeScreenState extends State<WalkingHomeScreen> {
                 streakDays: _streakDays,
                 onTargetChanged: (value) => setState(() => _targetMinutes = value),
                 onStart: _startWalk,
-                onStop: _stopWalk,
+                onStop: () => _stopWalk(),
               ),
               _StatsView(
                 sessions: _orderedSessions,
@@ -264,10 +585,45 @@ class _WalkingHomeScreenState extends State<WalkingHomeScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text(
-          'رفيق المشي',
-          style: TextStyle(fontWeight: FontWeight.w900, letterSpacing: 0),
+        title: Row(
+          children: [
+            Container(
+              width: 32, height: 32,
+              decoration: BoxDecoration(
+                gradient: WC.heroGrad,
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: const Icon(Icons.directions_walk_rounded, color: Colors.white, size: 18),
+            ),
+            const SizedBox(width: 10),
+            const Text('رفيق المشي'),
+          ],
         ),
+        actions: [
+          if (_tracking)
+            Padding(
+              padding: const EdgeInsets.only(left: 12),
+              child: Center(
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                  decoration: BoxDecoration(
+                    color: WC.green.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 7, height: 7,
+                        decoration: const BoxDecoration(color: WC.green, shape: BoxShape.circle),
+                      ),
+                      const SizedBox(width: 6),
+                      const Text('نشط', style: TextStyle(color: WC.green, fontSize: 11, fontWeight: FontWeight.w800)),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+        ],
       ),
       body: SafeArea(child: body),
       bottomNavigationBar: NavigationBar(
@@ -314,6 +670,24 @@ class _WalkingHomeScreenState extends State<WalkingHomeScreen> {
       setState(() => _gpsStatus = 'صلاحية الموقع غير مفعلة');
       return false;
     }
+
+    // For continued tracking with the screen locked, Android requires
+    // "Allow all the time" background location access. We politely ask;
+    // if denied, foreground-only tracking still works while app is open.
+    if (permission != LocationPermission.always) {
+      final bgStatus = await Permission.locationAlways.status;
+      if (!bgStatus.isGranted) {
+        await Permission.locationAlways.request();
+      }
+    }
+
+    // Notification permission needed on Android 13+ for the silent
+    // foreground-service notification.
+    final notifStatus = await Permission.notification.status;
+    if (!notifStatus.isGranted) {
+      await Permission.notification.request();
+    }
+
     return true;
   }
 
@@ -326,56 +700,28 @@ class _WalkingHomeScreenState extends State<WalkingHomeScreen> {
       _tracking = true;
       _elapsedSeconds = 0;
       _distanceMeters = 0;
-      _lastPosition = null;
       _gpsStatus = 'جاري التقاط GPS';
     });
 
-    _timer?.cancel();
-    _timer = Timer.periodic(const Duration(seconds: 1), (_) {
-      if (!mounted) return;
-      setState(() => _elapsedSeconds++);
-      if (_elapsedSeconds >= _targetMinutes * 60) {
-        _stopWalk(autoCompleted: true);
+    if (_serviceReady) {
+      final running = await _service.isRunning();
+      if (!running) {
+        await _service.startService();
       }
-    });
-
-    const settings = LocationSettings(
-      accuracy: LocationAccuracy.best,
-      distanceFilter: 3,
-    );
-    _positionSubscription?.cancel();
-    _positionSubscription = Geolocator.getPositionStream(locationSettings: settings).listen(
-      (position) {
-        if (!_tracking) return;
-        if (_lastPosition != null) {
-          final meters = Geolocator.distanceBetween(
-            _lastPosition!.latitude,
-            _lastPosition!.longitude,
-            position.latitude,
-            position.longitude,
-          );
-          if (meters >= 0 && meters < 80) {
-            _distanceMeters += meters;
-          }
-        }
-        _lastPosition = position;
-        if (mounted) {
-          setState(() => _gpsStatus = 'دقة الموقع ${position.accuracy.toStringAsFixed(0)} م');
-        }
-      },
-      onError: (_) {
-        if (mounted) setState(() => _gpsStatus = 'تعذر قراءة الموقع الآن');
-      },
-    );
+      _service.invoke('startTracking', {'targetMinutes': _targetMinutes});
+    }
   }
 
   Future<void> _stopWalk({bool autoCompleted = false}) async {
     if (!_tracking) return;
-    _timer?.cancel();
-    await _positionSubscription?.cancel();
-    _positionSubscription = null;
+
     final completedSeconds = _elapsedSeconds;
     final completedDistance = _distanceMeters;
+
+    if (_serviceReady) {
+      _service.invoke('stopTracking', {});
+      _service.invoke('stopService', {});
+    }
 
     setState(() {
       _tracking = false;
@@ -397,6 +743,7 @@ class _WalkingHomeScreenState extends State<WalkingHomeScreen> {
   }
 }
 
+// ─────────────────────────── WALK VIEW ───────────────────────────
 class _WalkView extends StatelessWidget {
   const _WalkView({
     required this.tracking,
@@ -424,117 +771,195 @@ class _WalkView extends StatelessWidget {
   final VoidCallback onStart;
   final VoidCallback onStop;
 
+  static const List<int> _presets = [5, 10, 15, 20, 30, 45];
+
   @override
   Widget build(BuildContext context) {
     return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 6, 16, 24),
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
       children: [
-        const Text(
-          'تحدي اليوم',
-          style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900, color: Color(0xFF203128)),
+        Container(
+          padding: const EdgeInsets.all(22),
+          decoration: BoxDecoration(
+            gradient: WC.timerGrad,
+            borderRadius: BorderRadius.circular(26),
+            boxShadow: [
+              BoxShadow(color: WC.green.withValues(alpha: 0.25), blurRadius: 24, offset: const Offset(0, 10)),
+            ],
+          ),
+          child: Column(
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.16),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          tracking ? Icons.satellite_alt_rounded : Icons.gps_fixed_rounded,
+                          size: 14, color: Colors.white,
+                        ),
+                        const SizedBox(width: 6),
+                        Text(gpsStatus, style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w700)),
+                      ],
+                    ),
+                  ),
+                  if (streakDays > 0)
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                      decoration: BoxDecoration(
+                        color: WC.orange.withValues(alpha: 0.85),
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(Icons.local_fire_department_rounded, size: 14, color: Colors.white),
+                          const SizedBox(width: 4),
+                          Text('$streakDays', style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w900)),
+                        ],
+                      ),
+                    ),
+                ],
+              ),
+              const SizedBox(height: 22),
+              SizedBox(
+                width: 220, height: 220,
+                child: Stack(
+                  alignment: Alignment.center,
+                  children: [
+                    SizedBox(
+                      width: 220, height: 220,
+                      child: CircularProgressIndicator(
+                        value: progress == 0 ? null : progress,
+                        strokeWidth: 12,
+                        backgroundColor: Colors.white.withValues(alpha: 0.18),
+                        valueColor: const AlwaysStoppedAnimation(Colors.white),
+                      ),
+                    ),
+                    Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          formatDuration(elapsedSeconds),
+                          style: const TextStyle(color: Colors.white, fontSize: 40, fontWeight: FontWeight.w900, letterSpacing: 1),
+                        ),
+                        const SizedBox(height: 4),
+                        Text('الهدف: $targetMinutes دقيقة', style: const TextStyle(color: Colors.white70, fontSize: 13)),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 22),
+              Row(
+                children: [
+                  Expanded(child: _heroStat(Icons.route_rounded, formatDistance(distanceMeters), 'المسافة')),
+                  Container(width: 1, height: 36, color: Colors.white24),
+                  Expanded(child: _heroStat(Icons.speed_rounded, '${averageSpeedKmh.toStringAsFixed(1)} كم/س', 'السرعة')),
+                ],
+              ),
+            ],
+          ),
         ),
+
+        const SizedBox(height: 18),
+
+        if (!tracking) ...[
+          const Text('اختر هدف الوقت', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w900, color: WC.text)),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 8, runSpacing: 8,
+            children: _presets.map((minutes) {
+              final selected = minutes == targetMinutes;
+              return GestureDetector(
+                onTap: () => onTargetChanged(minutes),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 200),
+                  padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+                  decoration: BoxDecoration(
+                    color: selected ? WC.green : WC.surface,
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: selected ? WC.green : WC.border, width: 1.4),
+                  ),
+                  child: Text(
+                    '$minutes د',
+                    style: TextStyle(
+                      color: selected ? Colors.white : WC.text,
+                      fontWeight: FontWeight.w800,
+                      fontSize: 14,
+                    ),
+                  ),
+                ),
+              );
+            }).toList(),
+          ),
+          const SizedBox(height: 22),
+        ],
+
+        SizedBox(
+          width: double.infinity,
+          child: tracking
+              ? FilledButton.icon(
+                  onPressed: onStop,
+                  style: FilledButton.styleFrom(backgroundColor: WC.orange),
+                  icon: const Icon(Icons.stop_circle_rounded),
+                  label: const Text('إيقاف الجلسة وحفظها', style: TextStyle(fontSize: 15)),
+                )
+              : FilledButton.icon(
+                  onPressed: onStart,
+                  icon: const Icon(Icons.play_circle_fill_rounded),
+                  label: const Text('ابدأ المشي الآن', style: TextStyle(fontSize: 15)),
+                ),
+        ),
+
+        const SizedBox(height: 18),
+
+        Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: WC.blue.withValues(alpha: 0.08),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: WC.blue.withValues(alpha: 0.18)),
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Icon(Icons.info_rounded, color: WC.blue, size: 18),
+              const SizedBox(width: 10),
+              const Expanded(
+                child: Text(
+                  'يستمر التتبع حتى عند قفل الشاشة بفضل إشعار صامت بسيط يطلبه نظام أندرويد. لن تسمع له صوتاً أو رنيناً.',
+                  style: TextStyle(color: WC.muted, fontSize: 12, height: 1.5),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _heroStat(IconData icon, String value, String label) {
+    return Column(
+      children: [
+        Icon(icon, color: Colors.white, size: 20),
         const SizedBox(height: 6),
-        Text(
-          encouragement(streakDays),
-          style: const TextStyle(color: Color(0xFF65746A), height: 1.45),
-        ),
-        const SizedBox(height: 14),
-        _TimerPanel(
-          elapsedSeconds: elapsedSeconds,
-          targetMinutes: targetMinutes,
-          progress: progress,
-          tracking: tracking,
-        ),
-        const SizedBox(height: 12),
-        SegmentedButton<int>(
-          segments: const [
-            ButtonSegment(value: 10, label: Text('10 د')),
-            ButtonSegment(value: 20, label: Text('20 د')),
-            ButtonSegment(value: 30, label: Text('30 د')),
-          ],
-          selected: {targetMinutes},
-          onSelectionChanged: tracking ? null : (value) => onTargetChanged(value.first),
-        ),
-        const SizedBox(height: 12),
-        Row(
-          children: [
-            Expanded(child: _MetricTile(title: 'المسافة', value: formatDistance(distanceMeters), color: const Color(0xFF3E725D))),
-            const SizedBox(width: 8),
-            Expanded(child: _MetricTile(title: 'متوسط السرعة', value: '${averageSpeedKmh.toStringAsFixed(1)} كم/س', color: const Color(0xFF315F72))),
-          ],
-        ),
-        const SizedBox(height: 8),
-        _MetricTile(title: 'حالة GPS', value: gpsStatus, color: const Color(0xFF8A6A20)),
-        const SizedBox(height: 16),
-        FilledButton.icon(
-          onPressed: tracking ? onStop : onStart,
-          icon: Icon(tracking ? Icons.stop_rounded : Icons.play_arrow_rounded),
-          label: Text(tracking ? 'إنهاء وحفظ الجلسة' : 'بدأت المشي'),
-        ),
-        const SizedBox(height: 8),
-        const Text(
-          'يفضل فتح خدمة الموقع والخروج لمكان مفتوح لتحسين دقة GPS.',
-          style: TextStyle(color: Color(0xFF65746A), height: 1.45),
-        ),
+        Text(value, style: const TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.w900)),
+        const SizedBox(height: 2),
+        Text(label, style: const TextStyle(color: Colors.white70, fontSize: 11)),
       ],
     );
   }
 }
 
-class _TimerPanel extends StatelessWidget {
-  const _TimerPanel({
-    required this.elapsedSeconds,
-    required this.targetMinutes,
-    required this.progress,
-    required this.tracking,
-  });
-
-  final int elapsedSeconds;
-  final int targetMinutes;
-  final double progress;
-  final bool tracking;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: const Color(0xFF203128),
-        borderRadius: BorderRadius.circular(10),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            tracking ? 'الجلسة تعمل الآن' : 'جاهز للمشي',
-            style: const TextStyle(color: Color(0xFFD2E1D8), fontWeight: FontWeight.w800),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            formatDuration(elapsedSeconds),
-            style: const TextStyle(color: Colors.white, fontSize: 42, fontWeight: FontWeight.w900, height: 1.05),
-          ),
-          const SizedBox(height: 8),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(99),
-            child: LinearProgressIndicator(
-              value: progress,
-              minHeight: 9,
-              backgroundColor: Colors.white.withValues(alpha: 0.16),
-              valueColor: const AlwaysStoppedAnimation(Color(0xFFAECFAE)),
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'الهدف $targetMinutes دقيقة',
-            style: const TextStyle(color: Color(0xFFD2E1D8)),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
+// ─────────────────────────── STATS VIEW ──────────────────────────
 class _StatsView extends StatelessWidget {
   const _StatsView({
     required this.sessions,
@@ -552,175 +977,266 @@ class _StatsView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final maxSeconds = weekly.fold<int>(1, (max, day) => day.durationSeconds > max ? day.durationSeconds : max);
+
     return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 6, 16, 24),
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
       children: [
-        const Text(
-          'السجل والإحصائيات',
-          style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900, color: Color(0xFF203128)),
+        Row(children: [
+          Expanded(child: _statCard('إجمالي الدقائق', '$totalMinutes', Icons.timer_rounded, WC.green)),
+          const SizedBox(width: 10),
+          Expanded(child: _statCard('المسافة الكلية', '${totalDistanceKm.toStringAsFixed(1)} كم', Icons.route_rounded, WC.blue)),
+          const SizedBox(width: 10),
+          Expanded(child: _statCard('التتابع', '$streakDays يوم', Icons.local_fire_department_rounded, WC.orange)),
+        ]),
+
+        const SizedBox(height: 22),
+
+        const Text('آخر 7 أيام', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900, color: WC.text)),
+        const SizedBox(height: 14),
+
+        Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: WC.card,
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: WC.border),
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: weekly.map((day) {
+              final heightFactor = day.durationSeconds / maxSeconds;
+              final hasWalk = day.durationSeconds > 0;
+              return Expanded(
+                child: Column(
+                  children: [
+                    Text(
+                      hasWalk ? formatDuration(day.durationSeconds) : '-',
+                      style: TextStyle(fontSize: 9, color: hasWalk ? WC.green : WC.hint, fontWeight: FontWeight.w700),
+                    ),
+                    const SizedBox(height: 6),
+                    Container(
+                      height: 90,
+                      alignment: Alignment.bottomCenter,
+                      child: FractionallySizedBox(
+                        heightFactor: hasWalk ? heightFactor.clamp(0.08, 1.0) : 0.04,
+                        child: Container(
+                          width: 18,
+                          decoration: BoxDecoration(
+                            gradient: hasWalk
+                                ? const LinearGradient(colors: [WC.green, WC.teal], begin: Alignment.bottomCenter, end: Alignment.topCenter)
+                                : null,
+                            color: hasWalk ? null : WC.border,
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(formatDayLabel(day.date), style: const TextStyle(fontSize: 10, color: WC.muted)),
+                  ],
+                ),
+              );
+            }).toList(),
+          ),
         ),
+
+        const SizedBox(height: 24),
+
+        const Text('سجل الجلسات', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900, color: WC.text)),
         const SizedBox(height: 12),
-        Row(
-          children: [
-            Expanded(child: _MetricTile(title: 'الدقائق', value: '$totalMinutes د', color: const Color(0xFF3E725D))),
-            const SizedBox(width: 8),
-            Expanded(child: _MetricTile(title: 'المسافة', value: '${totalDistanceKm.toStringAsFixed(2)} كم', color: const Color(0xFF315F72))),
-          ],
-        ),
-        const SizedBox(height: 8),
-        _MetricTile(title: 'الأيام المتتالية', value: '$streakDays يوم', color: const Color(0xFF8A6A20)),
-        const SizedBox(height: 16),
-        _WeeklyChart(title: 'آخر 7 أيام - مدة المشي', summaries: weekly, showDistance: false),
-        const SizedBox(height: 12),
-        _WeeklyChart(title: 'آخر 7 أيام - المسافة', summaries: weekly, showDistance: true),
-        const SizedBox(height: 16),
-        const Text(
-          'آخر الجلسات',
-          style: TextStyle(fontSize: 17, fontWeight: FontWeight.w900, color: Color(0xFF203128)),
-        ),
-        const SizedBox(height: 8),
+
         if (sessions.isEmpty)
-          const _EmptyState(title: 'لا توجد جلسات بعد', subtitle: 'ابدأ أول تحدي مشي لتظهر الإحصائيات هنا.')
+          Container(
+            padding: const EdgeInsets.all(28),
+            decoration: BoxDecoration(
+              color: WC.card,
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: WC.border),
+            ),
+            child: Column(
+              children: [
+                Icon(Icons.directions_walk_rounded, size: 44, color: WC.green.withValues(alpha: 0.4)),
+                const SizedBox(height: 12),
+                const Text('لا توجد جلسات بعد', style: TextStyle(fontWeight: FontWeight.w800)),
+                const SizedBox(height: 4),
+                const Text('ابدأ أول مشي لك من تبويب المشي', style: TextStyle(color: WC.muted, fontSize: 12)),
+              ],
+            ),
+          )
         else
-          ...sessions.take(10).map((session) => _SessionTile(session: session)),
+          ...sessions.map((session) => _sessionTile(session)),
       ],
     );
   }
-}
 
-class _WeeklyChart extends StatelessWidget {
-  const _WeeklyChart({
-    required this.title,
-    required this.summaries,
-    required this.showDistance,
-  });
+  Widget _statCard(String title, String value, IconData icon, Color color) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: WC.card,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: WC.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, color: color, size: 20),
+          const SizedBox(height: 8),
+          Text(value, style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900, color: color)),
+          Text(title, style: const TextStyle(color: WC.muted, fontSize: 10)),
+        ],
+      ),
+    );
+  }
 
-  final String title;
-  final List<DailyWalkSummary> summaries;
-  final bool showDistance;
-
-  @override
-  Widget build(BuildContext context) {
-    final maxValue = summaries
-        .map((item) => showDistance ? item.distanceMeters : item.durationSeconds / 60)
-        .fold<double>(0, (largest, value) => max(largest, value).toDouble());
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(title, style: const TextStyle(fontWeight: FontWeight.w900, color: Color(0xFF203128))),
-            const SizedBox(height: 14),
-            SizedBox(
-              height: 160,
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: summaries.map((item) {
-                  final value = showDistance ? item.distanceMeters : item.durationSeconds / 60;
-                  final heightFactor = maxValue <= 0 ? 0.04 : (value / maxValue).clamp(0.04, 1.0);
-                  return Expanded(
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 3),
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.end,
-                        children: [
-                          Text(
-                            showDistance ? '${(item.distanceMeters / 1000).toStringAsFixed(1)}' : '${(item.durationSeconds / 60).round()}',
-                            style: const TextStyle(fontSize: 10, color: Color(0xFF65746A), fontWeight: FontWeight.w800),
-                          ),
-                          const SizedBox(height: 5),
-                          Expanded(
-                            child: Align(
-                              alignment: Alignment.bottomCenter,
-                              child: FractionallySizedBox(
-                                heightFactor: heightFactor,
-                                child: Container(
-                                  decoration: BoxDecoration(
-                                    color: showDistance ? const Color(0xFF315F72) : const Color(0xFF3E725D),
-                                    borderRadius: BorderRadius.circular(8),
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 6),
-                          Text(shortDay(item.date), style: const TextStyle(fontSize: 11, color: Color(0xFF65746A))),
-                        ],
-                      ),
-                    ),
-                  );
-                }).toList(),
-              ),
+  Widget _sessionTile(WalkSession session) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: WC.card,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: WC.border),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 40, height: 40,
+            decoration: BoxDecoration(
+              color: WC.green.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(12),
             ),
-          ],
-        ),
+            child: const Icon(Icons.directions_walk_rounded, color: WC.green, size: 20),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '${session.date.year}/${session.date.month}/${session.date.day} • ${formatDayLabel(session.date)}',
+                  style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  '${formatDuration(session.durationSeconds)} • ${formatDistance(session.distanceMeters)} • ${session.averageSpeedKmh.toStringAsFixed(1)} كم/س',
+                  style: const TextStyle(color: WC.muted, fontSize: 11),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
 }
 
+// ─────────────────────────── BADGES VIEW ─────────────────────────
 class _BadgesView extends StatelessWidget {
-  const _BadgesView({
-    required this.sessionCount,
-    required this.streakDays,
-  });
+  const _BadgesView({required this.sessionCount, required this.streakDays});
 
   final int sessionCount;
   final int streakDays;
 
   @override
   Widget build(BuildContext context) {
-    final badges = [
-      BadgeInfo('أول مشي', 'أكمل أول جلسة مشي.', sessionCount >= 1),
-      BadgeInfo('3 أيام', 'حافظ على الحركة 3 أيام.', streakDays >= 3),
-      BadgeInfo('7 أيام', 'أسبوع مشي كامل.', streakDays >= 7),
-      BadgeInfo('30 يوم', 'بطل التحدي الشهري.', streakDays >= 30),
+    final badges = <BadgeInfo>[
+      BadgeInfo('الخطوة الأولى', 'أكمل أول جلسة مشي', sessionCount >= 1, Icons.flag_circle_rounded, WC.green),
+      BadgeInfo('خمس جلسات', 'أكمل 5 جلسات مشي', sessionCount >= 5, Icons.looks_5_rounded, WC.blue),
+      BadgeInfo('عشر جلسات', 'أكمل 10 جلسات مشي', sessionCount >= 10, Icons.looks_one_rounded, WC.violet),
+      BadgeInfo('25 جلسة', 'أكمل 25 جلسة مشي', sessionCount >= 25, Icons.military_tech_rounded, WC.amber),
+      BadgeInfo('3 أيام متتالية', 'حافظ على التتابع 3 أيام', streakDays >= 3, Icons.local_fire_department_rounded, WC.orange),
+      BadgeInfo('7 أيام متتالية', 'حافظ على التتابع أسبوعاً كاملاً', streakDays >= 7, Icons.whatshot_rounded, WC.orange),
+      BadgeInfo('14 يوماً متتالياً', 'أسبوعان من الالتزام', streakDays >= 14, Icons.bolt_rounded, WC.amber),
+      BadgeInfo('30 يوماً متتالياً', 'شهر كامل من المشي اليومي', streakDays >= 30, Icons.workspace_premium_rounded, WC.violet),
     ];
+
+    final unlockedCount = badges.where((badge) => badge.unlocked).length;
+
     return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 6, 16, 24),
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
       children: [
-        const Text(
-          'الشارات',
-          style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900, color: Color(0xFF203128)),
-        ),
-        const SizedBox(height: 6),
-        const Text(
-          'الشارات تظهر كأهداف تحفيزية. في النسخة القادمة سنجعلها تفتح تلقائيًا حسب إنجازك.',
-          style: TextStyle(color: Color(0xFF65746A), height: 1.45),
-        ),
-        const SizedBox(height: 14),
-        ...badges.map((badge) => Card(
-              child: ListTile(
-                leading: CircleAvatar(
-                  backgroundColor: badge.unlocked ? const Color(0xFFE7F0E3) : const Color(0xFFEAEDE8),
-                  foregroundColor: badge.unlocked ? const Color(0xFF3E725D) : const Color(0xFF8A9688),
-                  child: Icon(badge.unlocked ? Icons.emoji_events_rounded : Icons.lock_outline_rounded),
-                ),
-                title: Text(badge.title, style: const TextStyle(fontWeight: FontWeight.w900)),
-                subtitle: Text(badge.description),
-                trailing: Text(
-                  badge.unlocked ? 'مفتوحة' : 'قريبًا',
-                  style: TextStyle(
-                    color: badge.unlocked ? const Color(0xFF3E725D) : const Color(0xFF8A9688),
-                    fontWeight: FontWeight.w900,
-                  ),
+        Container(
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            gradient: WC.heroGrad,
+            borderRadius: BorderRadius.circular(22),
+          ),
+          child: Row(
+            children: [
+              const Icon(Icons.emoji_events_rounded, color: Colors.white, size: 38),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('$unlockedCount من ${badges.length} شارة',
+                      style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w900)),
+                    const SizedBox(height: 4),
+                    const Text('استمر بالمشي لفتح المزيد', style: TextStyle(color: Colors.white70, fontSize: 12)),
+                  ],
                 ),
               ),
-            )),
+            ],
+          ),
+        ),
+        const SizedBox(height: 18),
+        GridView.builder(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          itemCount: badges.length,
+          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: 2,
+            mainAxisSpacing: 12,
+            crossAxisSpacing: 12,
+            childAspectRatio: 0.95,
+          ),
+          itemBuilder: (context, index) {
+            final badge = badges[index];
+            return Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: badge.unlocked ? WC.card : WC.surface,
+                borderRadius: BorderRadius.circular(18),
+                border: Border.all(color: badge.unlocked ? badge.color.withValues(alpha: 0.3) : WC.border),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    width: 44, height: 44,
+                    decoration: BoxDecoration(
+                      color: badge.unlocked ? badge.color.withValues(alpha: 0.14) : WC.hint.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    child: Icon(
+                      badge.icon,
+                      color: badge.unlocked ? badge.color : WC.hint,
+                      size: 22,
+                    ),
+                  ),
+                  const Spacer(),
+                  Text(badge.title,
+                    style: TextStyle(
+                      fontWeight: FontWeight.w800, fontSize: 13,
+                      color: badge.unlocked ? WC.text : WC.hint,
+                    )),
+                  const SizedBox(height: 3),
+                  Text(badge.description,
+                    style: TextStyle(fontSize: 10, color: badge.unlocked ? WC.muted : WC.hint, height: 1.3)),
+                ],
+              ),
+            );
+          },
+        ),
       ],
     );
   }
 }
 
-class BadgeInfo {
-  const BadgeInfo(this.title, this.description, this.unlocked);
-
-  final String title;
-  final String description;
-  final bool unlocked;
-}
-
+// ─────────────────────────── DEVELOPER CONTACT VIEW ──────────────
 class _DeveloperContactView extends StatefulWidget {
   const _DeveloperContactView();
 
@@ -737,61 +1253,6 @@ class _DeveloperContactViewState extends State<_DeveloperContactView> {
     _nameController.dispose();
     _noteController.dispose();
     super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 6, 16, 24),
-      children: [
-        const Text(
-          'مراسلة المطور',
-          style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900, color: Color(0xFF203128)),
-        ),
-        const SizedBox(height: 6),
-        const Text(
-          'أرسل اقتراحًا أو مشكلة ظهرت معك أثناء استخدام التطبيق.',
-          style: TextStyle(color: Color(0xFF65746A), height: 1.45),
-        ),
-        const SizedBox(height: 14),
-        Card(
-          child: Padding(
-            padding: const EdgeInsets.all(14),
-            child: SelectableText(
-              developerEmail,
-              style: const TextStyle(fontWeight: FontWeight.w900, color: Color(0xFF203128)),
-            ),
-          ),
-        ),
-        const SizedBox(height: 10),
-        TextField(
-          controller: _nameController,
-          decoration: const InputDecoration(labelText: 'اسمك اختياري', prefixIcon: Icon(Icons.person_outline_rounded)),
-        ),
-        const SizedBox(height: 10),
-        TextField(
-          controller: _noteController,
-          maxLines: 6,
-          decoration: const InputDecoration(
-            labelText: 'اكتب الملاحظة',
-            alignLabelWithHint: true,
-            prefixIcon: Icon(Icons.edit_note_rounded),
-          ),
-        ),
-        const SizedBox(height: 14),
-        FilledButton.icon(
-          onPressed: _sendEmail,
-          icon: const Icon(Icons.send_rounded),
-          label: const Text('إرسال عبر الإيميل'),
-        ),
-        const SizedBox(height: 8),
-        OutlinedButton.icon(
-          onPressed: _copyMessage,
-          icon: const Icon(Icons.copy_rounded),
-          label: const Text('نسخ الرسالة'),
-        ),
-      ],
-    );
   }
 
   String _messageBody() {
@@ -821,139 +1282,137 @@ class _DeveloperContactViewState extends State<_DeveloperContactView> {
     await Clipboard.setData(ClipboardData(text: 'إلى: $developerEmail\n\n${_messageBody()}'));
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('تم نسخ الرسالة والبريد')),
-    );
-  }
-}
-
-class _MetricTile extends StatelessWidget {
-  const _MetricTile({
-    required this.title,
-    required this.value,
-    required this.color,
-  });
-
-  final String title;
-  final String value;
-  final Color color;
-
-  @override
-  Widget build(BuildContext context) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(title, style: const TextStyle(color: Color(0xFF65746A), fontWeight: FontWeight.w800)),
-            const SizedBox(height: 8),
-            Text(value, style: TextStyle(color: color, fontSize: 19, fontWeight: FontWeight.w900)),
-          ],
-        ),
+      SnackBar(
+        content: const Text('تم نسخ الرسالة والبريد'),
+        backgroundColor: WC.text,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       ),
     );
   }
-}
-
-class _SessionTile extends StatelessWidget {
-  const _SessionTile({required this.session});
-
-  final WalkSession session;
 
   @override
   Widget build(BuildContext context) {
-    return Card(
-      margin: const EdgeInsets.only(bottom: 8),
-      child: ListTile(
-        leading: const CircleAvatar(
-          backgroundColor: Color(0xFFE7F0E3),
-          foregroundColor: Color(0xFF3E725D),
-          child: Icon(Icons.directions_walk_rounded),
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(16, 24, 16, 32),
+      children: [
+        Container(
+          padding: const EdgeInsets.all(24),
+          decoration: BoxDecoration(
+            gradient: WC.heroGrad,
+            borderRadius: BorderRadius.circular(24),
+          ),
+          child: Column(
+            children: [
+              Container(
+                width: 70, height: 70,
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.18),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: const Icon(Icons.code_rounded, color: Colors.white, size: 34),
+              ),
+              const SizedBox(height: 16),
+              const Text('تواصل مع المطور', style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w900)),
+              const SizedBox(height: 6),
+              const Text(
+                'لديك ملاحظة أو اقتراح لتحسين التطبيق؟\nأرسل رسالة مباشرة',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: Colors.white70, fontSize: 13, height: 1.6),
+              ),
+            ],
+          ),
         ),
-        title: Text(formatDate(session.date), style: const TextStyle(fontWeight: FontWeight.w900)),
-        subtitle: Text('مدة ${formatDuration(session.durationSeconds)} · سرعة ${session.averageSpeedKmh.toStringAsFixed(1)} كم/س'),
-        trailing: Text(formatDistance(session.distanceMeters), style: const TextStyle(fontWeight: FontWeight.w900)),
-      ),
+        const SizedBox(height: 20),
+
+        Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: WC.card,
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: WC.border),
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 42, height: 42,
+                decoration: BoxDecoration(
+                  color: WC.blue.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(13),
+                ),
+                child: const Icon(Icons.email_rounded, color: WC.blue, size: 20),
+              ),
+              const SizedBox(width: 12),
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('البريد الإلكتروني', style: TextStyle(color: WC.muted, fontSize: 11)),
+                    SizedBox(height: 2),
+                    Text(developerEmail, style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13)),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+
+        const SizedBox(height: 16),
+
+        TextField(
+          controller: _nameController,
+          decoration: const InputDecoration(labelText: 'اسمك (اختياري)', prefixIcon: Icon(Icons.person_rounded)),
+        ),
+        const SizedBox(height: 10),
+        TextField(
+          controller: _noteController,
+          minLines: 4,
+          maxLines: 8,
+          decoration: const InputDecoration(
+            labelText: 'رسالتك أو ملاحظتك',
+            alignLabelWithHint: true,
+            prefixIcon: Icon(Icons.edit_note_rounded),
+          ),
+        ),
+
+        const SizedBox(height: 14),
+        FilledButton.icon(
+          onPressed: _sendEmail,
+          icon: const Icon(Icons.send_rounded),
+          label: const Text('إرسال بريد إلكتروني'),
+        ),
+        const SizedBox(height: 10),
+        OutlinedButton.icon(
+          onPressed: _copyMessage,
+          icon: const Icon(Icons.copy_rounded, size: 18),
+          label: const Text('نسخ الرسالة فقط'),
+        ),
+
+        const SizedBox(height: 24),
+        Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: WC.surface,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: WC.border),
+          ),
+          child: const Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(children: [
+                Icon(Icons.info_outline_rounded, color: WC.muted, size: 16),
+                SizedBox(width: 8),
+                Text('عن التطبيق', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13)),
+              ]),
+              SizedBox(height: 8),
+              Text(
+                'رفيق المشي v2.0\nتتبع GPS حتى مع قفل الشاشة • إحصائيات أسبوعية • شارات تحفيزية • يعمل بدون إنترنت',
+                style: TextStyle(color: WC.muted, fontSize: 12, height: 1.6),
+              ),
+            ],
+          ),
+        ),
+      ],
     );
   }
-}
-
-class _EmptyState extends StatelessWidget {
-  const _EmptyState({
-    required this.title,
-    required this.subtitle,
-  });
-
-  final String title;
-  final String subtitle;
-
-  @override
-  Widget build(BuildContext context) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(18),
-        child: Column(
-          children: [
-            const Icon(Icons.directions_walk_outlined, size: 34, color: Color(0xFF8A9688)),
-            const SizedBox(height: 8),
-            Text(title, style: const TextStyle(fontWeight: FontWeight.w900)),
-            const SizedBox(height: 4),
-            Text(
-              subtitle,
-              textAlign: TextAlign.center,
-              style: const TextStyle(color: Color(0xFF65746A), height: 1.45),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class DailyWalkSummary {
-  const DailyWalkSummary({
-    required this.date,
-    required this.durationSeconds,
-    required this.distanceMeters,
-  });
-
-  final DateTime date;
-  final int durationSeconds;
-  final double distanceMeters;
-}
-
-String encouragement(int streak) {
-  if (streak >= 30) return 'ممتاز، أنت محافظ على حركة يومية قوية.';
-  if (streak >= 7) return 'أسبوع رائع. حافظ على الإيقاع الهادئ.';
-  if (streak >= 3) return 'بدأت العادة تثبت. مشي بسيط كل يوم يصنع فرقًا.';
-  return 'ابدأ بخطوة خفيفة اليوم. لا تحتاج رياضة قاسية.';
-}
-
-String dayKey(DateTime date) {
-  final day = DateTime(date.year, date.month, date.day);
-  final month = day.month.toString().padLeft(2, '0');
-  final d = day.day.toString().padLeft(2, '0');
-  return '${day.year}-$month-$d';
-}
-
-String formatDuration(int seconds) {
-  final minutes = seconds ~/ 60;
-  final rem = seconds % 60;
-  return '${minutes.toString().padLeft(2, '0')}:${rem.toString().padLeft(2, '0')}';
-}
-
-String formatDistance(double meters) {
-  if (meters < 1000) return '${meters.toStringAsFixed(0)} م';
-  return '${(meters / 1000).toStringAsFixed(2)} كم';
-}
-
-String formatDate(DateTime date) {
-  final day = date.day.toString().padLeft(2, '0');
-  final month = date.month.toString().padLeft(2, '0');
-  return '$day/$month/${date.year}';
-}
-
-String shortDay(DateTime date) {
-  const days = ['أح', 'إث', 'ثل', 'أر', 'خم', 'جم', 'سب'];
-  return days[date.weekday % 7];
 }
