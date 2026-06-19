@@ -133,14 +133,7 @@ jobs:
                   m = re.search(r'android\s*\{', text)
                   if m:
                       insert_at = m.end()
-                      block = '''
-
-    compileOptions {
-        isCoreLibraryDesugaringEnabled = true
-        sourceCompatibility = JavaVersion.VERSION_17
-        targetCompatibility = JavaVersion.VERSION_17
-    }
-'''
+                      block = "\n\n    compileOptions {\n        isCoreLibraryDesugaringEnabled = true\n        sourceCompatibility = JavaVersion.VERSION_17\n        targetCompatibility = JavaVersion.VERSION_17\n    }\n"
                       text = text[:insert_at] + block + text[insert_at:]
 
           # إضافة مكتبة desugar المطلوبة من flutter_local_notifications
