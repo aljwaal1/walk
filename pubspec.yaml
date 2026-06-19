@@ -1,22 +1,23 @@
-name: dashcam_no_audio
-description: Offline Android dash cam app - video only, no audio, with burned-in timestamp.
-publish_to: 'none'
-version: 1.1.0+2
+name: walking_companion
+description: Arabic offline walking and movement companion with background tracking.
+publish_to: "none"
+
+version: 2.0.0+1
 
 environment:
-  sdk: '>=3.4.0 <4.0.0'
+  sdk: ">=3.3.0 <4.0.0"
 
 dependencies:
   flutter:
     sdk: flutter
-  camera: ^0.11.0+2
-  path_provider: ^2.1.4
+  flutter_localizations:
+    sdk: flutter
   geolocator: ^13.0.2
-  video_player: ^2.9.2
-  intl: ^0.19.0
-  share_plus: ^11.0.0
-  ffmpeg_kit_flutter_new: ^4.1.0
-  flutter_local_notifications: ^17.2.4
+  shared_preferences: ^2.3.3
+  url_launcher: ^6.3.1
+  flutter_background_service: ^5.0.10
+  flutter_local_notifications: ^18.0.1
+  permission_handler: ^11.3.1
 
 dev_dependencies:
   flutter_test:
