@@ -43,32 +43,61 @@ jobs:
       - name: Get packages
         run: flutter pub get
 
-      - name: Configure Android app
+      - name: Configure Android app (minSdk + applicationId)
         shell: bash
         run: |
           set -e
           if [ -f android/app/build.gradle.kts ]; then
-            sed -i 's/applicationId = ".*"/applicationId = "com.explapp.walkingcompanion"/g' android/app/build.gradle.kts
+            sed -i 's/applicationId = \".*\"/applicationId = \"com.explapp.walkingcompanion\"/g' android/app/build.gradle.kts
             sed -i 's/minSdk = flutter.minSdkVersion/minSdk = 23/g' android/app/build.gradle.kts
             sed -i 's/minSdk = [0-9][0-9]*/minSdk = 23/g' android/app/build.gradle.kts
           fi
           if [ -f android/app/build.gradle ]; then
-            sed -i 's/applicationId ".*"/applicationId "com.explapp.walkingcompanion"/g' android/app/build.gradle
+            sed -i 's/applicationId \".*\"/applicationId \"com.explapp.walkingcompanion\"/g' android/app/build.gradle
             sed -i 's/minSdkVersion flutter.minSdkVersion/minSdkVersion 23/g' android/app/build.gradle
             sed -i 's/minSdkVersion [0-9][0-9]*/minSdkVersion 23/g' android/app/build.gradle
           fi
+
+      - name: Write AndroidManifest (location + foreground service + notifications)
+        shell: bash
+        run: |
           cat > android/app/src/main/AndroidManifest.xml <<'MANIFEST'
           <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-              <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
-              <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+              <uses-permission android:name="android.permission.INTERNET"/>
+              <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
+              <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
+              <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION"/>
+              <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
+              <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION"/>
+              <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+              <uses-permission android:name="android.permission.WAKE_LOCK"/>
+              <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
+
               <queries>
+                  <intent>
+                      <action android:name="android.intent.action.VIEW" />
+                      <data android:scheme="https" />
+                  </intent>
                   <intent>
                       <action android:name="android.intent.action.SENDTO" />
                       <data android:scheme="mailto" />
                   </intent>
               </queries>
-              <application android:label="رفيق المشي" android:name="${applicationName}" android:icon="@mipmap/ic_launcher" android:usesCleartextTraffic="false">
-                  <activity android:name=".MainActivity" android:exported="true" android:launchMode="singleTop" android:taskAffinity="" android:theme="@style/LaunchTheme" android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode" android:hardwareAccelerated="true" android:windowSoftInputMode="adjustResize">
+
+              <application
+                  android:label="رفيق المشي"
+                  android:name="${applicationName}"
+                  android:icon="@mipmap/ic_launcher"
+                  android:usesCleartextTraffic="false">
+                  <activity
+                      android:name=".MainActivity"
+                      android:exported="true"
+                      android:launchMode="singleTop"
+                      android:taskAffinity=""
+                      android:theme="@style/LaunchTheme"
+                      android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
+                      android:hardwareAccelerated="true"
+                      android:windowSoftInputMode="adjustResize">
                       <meta-data android:name="io.flutter.embedding.android.NormalTheme" android:resource="@style/NormalTheme" />
                       <intent-filter>
                           <action android:name="android.intent.action.MAIN" />
@@ -76,17 +105,26 @@ jobs:
                       </intent-filter>
                   </activity>
                   <meta-data android:name="flutterEmbedding" android:value="2" />
+
+                  <service
+                      android:name="id.flutter.flutter_background_service.BackgroundService"
+                      android:foregroundServiceType="location"
+                      android:exported="false" />
+
+                  <receiver
+                      android:name="id.flutter.flutter_background_service.WatchdogReceiver"
+                      android:exported="false" />
               </application>
           </manifest>
           MANIFEST
 
       - name: Analyze
         run: |
-          rm -f test/widget_test.dart
+          rm -rf test
           flutter analyze --no-fatal-infos --no-fatal-warnings
 
       - name: Build release APK
-        run: flutter build apk --release
+        run: flutter build apk --release --no-tree-shake-icons
 
       - name: Copy APK to repository folder
         run: |
@@ -96,13 +134,9 @@ jobs:
           cat > DOWNLOAD_APK.md <<EOF
           # رابط تحميل التطبيق
 
-          بعد نجاح البناء، حمل ملف APK مباشرة من هذا الرابط:
+          حمّل APK مباشرة:
 
           ${APK_URL}
-
-          اسم الملف:
-
-          apk/walking-companion.apk
           EOF
           {
             echo "## رابط تحميل APK"
@@ -110,7 +144,7 @@ jobs:
             echo "${APK_URL}"
           } >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Save APK file
+      - name: Commit APK
         shell: bash
         run: |
           git config user.name "github-actions[bot]"
@@ -119,6 +153,6 @@ jobs:
           if git diff --cached --quiet; then
             echo "APK already up to date"
           else
-            git commit -m "Update direct APK"
+            git commit -m "ci: update APK build"
             git push
           fi
