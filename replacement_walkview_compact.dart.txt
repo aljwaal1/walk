@@ -1,0 +1,285 @@
+class _WalkView extends StatelessWidget {
+  const _WalkView({
+    required this.tracking,
+    required this.targetMinutes,
+    required this.elapsedSeconds,
+    required this.distanceMeters,
+    required this.averageSpeedKmh,
+    required this.progress,
+    required this.gpsStatus,
+    required this.streakDays,
+    required this.onTargetChanged,
+    required this.onStart,
+    required this.onStop,
+  });
+
+  final bool tracking;
+  final int targetMinutes;
+  final int elapsedSeconds;
+  final double distanceMeters;
+  final double averageSpeedKmh;
+  final double progress;
+  final String gpsStatus;
+  final int streakDays;
+  final ValueChanged<int> onTargetChanged;
+  final VoidCallback onStart;
+  final VoidCallback onStop;
+
+  static const List<int> _presets = [5, 10, 15, 20, 30, 45];
+
+  @override
+  Widget build(BuildContext context) {
+    final safeProgress = progress.clamp(0.001, 1.0).toDouble();
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        return SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(14, 8, 14, 14),
+          child: ConstrainedBox(
+            constraints: BoxConstraints(minHeight: constraints.maxHeight - 22),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Container(
+                  padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+                  decoration: BoxDecoration(
+                    gradient: WC.timerGrad,
+                    borderRadius: BorderRadius.circular(24),
+                    boxShadow: [
+                      BoxShadow(
+                        color: WC.green.withValues(alpha: 0.18),
+                        blurRadius: 18,
+                        offset: const Offset(0, 8),
+                      ),
+                    ],
+                  ),
+                  child: Column(
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: _statusPill(
+                              tracking ? Icons.satellite_alt_rounded : Icons.gps_fixed_rounded,
+                              gpsStatus,
+                            ),
+                          ),
+                          if (streakDays > 0) ...[
+                            const SizedBox(width: 8),
+                            _streakPill(streakDays),
+                          ],
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      Row(
+                        children: [
+                          SizedBox(
+                            width: 150,
+                            height: 150,
+                            child: Stack(
+                              alignment: Alignment.center,
+                              children: [
+                                SizedBox(
+                                  width: 150,
+                                  height: 150,
+                                  child: CircularProgressIndicator(
+                                    value: safeProgress,
+                                    strokeWidth: 8,
+                                    strokeCap: StrokeCap.round,
+                                    backgroundColor: Colors.white.withValues(alpha: 0.18),
+                                    valueColor: const AlwaysStoppedAnimation(Colors.white),
+                                  ),
+                                ),
+                                Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Text(
+                                      formatDuration(elapsedSeconds),
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 30,
+                                        fontWeight: FontWeight.w900,
+                                        letterSpacing: 0.5,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      'هدف $targetMinutes د',
+                                      style: const TextStyle(color: Colors.white70, fontSize: 12),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(width: 14),
+                          Expanded(
+                            child: Column(
+                              children: [
+                                _heroStat(Icons.route_rounded, formatDistance(distanceMeters), 'المسافة'),
+                                const SizedBox(height: 10),
+                                _heroStat(Icons.speed_rounded, '${averageSpeedKmh.toStringAsFixed(1)} كم/س', 'السرعة'),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+
+                const SizedBox(height: 12),
+
+                if (!tracking) ...[
+                  const Text(
+                    'اختر هدف الوقت',
+                    style: TextStyle(fontSize: 14, fontWeight: FontWeight.w900, color: WC.text),
+                  ),
+                  const SizedBox(height: 8),
+                  SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Row(
+                      children: _presets.map((minutes) {
+                        final selected = minutes == targetMinutes;
+                        return Padding(
+                          padding: const EdgeInsets.only(left: 8),
+                          child: ChoiceChip(
+                            selected: selected,
+                            label: Text('$minutes د'),
+                            onSelected: (_) => onTargetChanged(minutes),
+                            selectedColor: WC.green,
+                            backgroundColor: WC.surface,
+                            labelStyle: TextStyle(
+                              color: selected ? Colors.white : WC.text,
+                              fontWeight: FontWeight.w800,
+                              fontSize: 13,
+                            ),
+                            side: BorderSide(color: selected ? WC.green : WC.border),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(13)),
+                          ),
+                        );
+                      }).toList(),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                ],
+
+                SizedBox(
+                  width: double.infinity,
+                  child: tracking
+                      ? FilledButton.icon(
+                          onPressed: onStop,
+                          style: FilledButton.styleFrom(
+                            backgroundColor: WC.orange,
+                            padding: const EdgeInsets.symmetric(vertical: 14),
+                          ),
+                          icon: const Icon(Icons.stop_circle_rounded),
+                          label: const Text('إيقاف الجلسة وحفظها', style: TextStyle(fontSize: 15)),
+                        )
+                      : FilledButton.icon(
+                          onPressed: onStart,
+                          style: FilledButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 14)),
+                          icon: const Icon(Icons.play_circle_fill_rounded),
+                          label: const Text('ابدأ المشي الآن', style: TextStyle(fontSize: 15)),
+                        ),
+                ),
+
+                const SizedBox(height: 10),
+
+                Container(
+                  padding: const EdgeInsets.all(11),
+                  decoration: BoxDecoration(
+                    color: WC.blue.withValues(alpha: 0.07),
+                    borderRadius: BorderRadius.circular(15),
+                    border: Border.all(color: WC.blue.withValues(alpha: 0.16)),
+                  ),
+                  child: const Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Icon(Icons.lock_clock_rounded, color: WC.blue, size: 17),
+                      SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'التتبع يستمر عند قفل الشاشة عبر إشعار صامت أثناء الجلسة فقط.',
+                          style: TextStyle(color: WC.muted, fontSize: 11.5, height: 1.35),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _statusPill(IconData icon, String text) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.16),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 14, color: Colors.white),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Text(
+              text,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w700),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _streakPill(int days) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
+      decoration: BoxDecoration(
+        color: WC.orange.withValues(alpha: 0.9),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.local_fire_department_rounded, size: 14, color: Colors.white),
+          const SizedBox(width: 4),
+          Text('$days', style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w900)),
+        ],
+      ),
+    );
+  }
+
+  Widget _heroStat(IconData icon, String value, String label) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.13),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, color: Colors.white, size: 19),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(value, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w900)),
+                Text(label, style: const TextStyle(color: Colors.white70, fontSize: 10.5)),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
