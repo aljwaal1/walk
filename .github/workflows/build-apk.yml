@@ -1,201 +1,76 @@
-name: Build APK Direct
+name: Build Android 4.4 APK
 
 on:
   workflow_dispatch:
   push:
-    branches:
-      - main
-      - master
+    branches: [ android-4.4 ]
     paths-ignore:
-      - "apk/**"
-      - "DOWNLOAD_APK.md"
+      - 'apk/**'
+      - 'DOWNLOAD_APK.md'
 
 permissions:
   contents: write
 
 jobs:
   build:
-    name: Build Android APK
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout source
+      - name: Checkout Android 4.4 branch
         uses: actions/checkout@v4
+        with:
+          ref: android-4.4
+          fetch-depth: 0
 
-      - name: Set up Java 17
+      - name: Setup Java 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: "17"
+          java-version: '17'
 
-      - name: Set up Flutter
+      - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
           channel: stable
-          cache: true
 
-      - name: Create Android project files
-        run: flutter create --platforms=android --org com.explapp --no-pub .
-
-      - name: Remove generated sample tests
-        run: rm -rf test
-
-      - name: Get packages
-        run: flutter pub get
+      - name: Prepare Android project
+        run: |
+          flutter create --platforms=android --org com.explapp --no-pub .
+          rm -rf test
+          flutter pub get
 
       - name: Configure Android app
-        shell: bash
         run: |
-          set -e
-          if [ -f android/app/build.gradle.kts ]; then
-            sed -i 's/applicationId = ".*"/applicationId = "com.explapp.walkingcompanion"/g' android/app/build.gradle.kts
-            sed -i 's/minSdk = flutter.minSdkVersion/minSdk = 23/g' android/app/build.gradle.kts
-            sed -i 's/minSdk = [0-9][0-9]*/minSdk = 23/g' android/app/build.gradle.kts
-          fi
-          if [ -f android/app/build.gradle ]; then
-            sed -i 's/applicationId ".*"/applicationId "com.explapp.walkingcompanion"/g' android/app/build.gradle
-            sed -i 's/minSdkVersion flutter.minSdkVersion/minSdkVersion 23/g' android/app/build.gradle
-            sed -i 's/minSdkVersion [0-9][0-9]*/minSdkVersion 23/g' android/app/build.gradle
-          fi
-
-      - name: Enable desugaring
-        shell: bash
-        run: |
-          set -e
-          if [ -f android/app/build.gradle.kts ]; then
-            python3 - <<'PYKTS'
-          from pathlib import Path
-          p = Path('android/app/build.gradle.kts')
-          s = p.read_text()
-          if 'isCoreLibraryDesugaringEnabled = true' not in s:
-              if 'compileOptions {' in s:
-                  s = s.replace('compileOptions {', 'compileOptions {\n        isCoreLibraryDesugaringEnabled = true', 1)
-              else:
-                  s = s.replace('android {', 'android {\n    compileOptions {\n        isCoreLibraryDesugaringEnabled = true\n        sourceCompatibility = JavaVersion.VERSION_17\n        targetCompatibility = JavaVersion.VERSION_17\n    }', 1)
-          if 'coreLibraryDesugaring("com.android.tools:desugar_jdk_libs' not in s:
-              s += '\n\ndependencies {\n    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")\n}\n'
-          p.write_text(s)
-          PYKTS
-          fi
-          if [ -f android/app/build.gradle ]; then
-            python3 - <<'PYGRADLE'
-          from pathlib import Path
-          p = Path('android/app/build.gradle')
-          s = p.read_text()
-          if 'coreLibraryDesugaringEnabled true' not in s:
-              if 'compileOptions {' in s:
-                  s = s.replace('compileOptions {', 'compileOptions {\n        coreLibraryDesugaringEnabled true', 1)
-              else:
-                  s = s.replace('android {', 'android {\n    compileOptions {\n        coreLibraryDesugaringEnabled true\n        sourceCompatibility JavaVersion.VERSION_17\n        targetCompatibility JavaVersion.VERSION_17\n    }', 1)
-          if "coreLibraryDesugaring 'com.android.tools:desugar_jdk_libs" not in s:
-              s += "\n\ndependencies {\n    coreLibraryDesugaring 'com.android.tools:desugar_jdk_libs:2.1.4'\n}\n"
-          p.write_text(s)
-          PYGRADLE
-          fi
-
-      - name: Write AndroidManifest
-        shell: bash
-        run: |
-          set -e
-          python3 - <<'PYMANIFEST'
-          from pathlib import Path
-          manifest = '''<manifest xmlns:android="http://schemas.android.com/apk/res/android"
-              xmlns:tools="http://schemas.android.com/tools">
-              <uses-permission android:name="android.permission.INTERNET" />
-              <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
-              <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
-              <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
-              <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
-              <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
-              <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
-              <uses-permission android:name="android.permission.WAKE_LOCK" />
-              <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
-
-              <queries>
-                  <intent>
-                      <action android:name="android.intent.action.VIEW" />
-                      <data android:scheme="https" />
-                  </intent>
-                  <intent>
-                      <action android:name="android.intent.action.SENDTO" />
-                      <data android:scheme="mailto" />
-                  </intent>
-              </queries>
-
-              <application
-                  android:label="رفيق المشي"
-                  android:name="${applicationName}"
-                  android:icon="@mipmap/ic_launcher"
-                  android:usesCleartextTraffic="false">
-                  <activity
-                      android:name=".MainActivity"
-                      android:exported="true"
-                      android:launchMode="singleTop"
-                      android:taskAffinity=""
-                      android:theme="@style/LaunchTheme"
-                      android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
-                      android:hardwareAccelerated="true"
-                      android:windowSoftInputMode="adjustResize">
-                      <meta-data android:name="io.flutter.embedding.android.NormalTheme" android:resource="@style/NormalTheme" />
-                      <intent-filter>
-                          <action android:name="android.intent.action.MAIN" />
-                          <category android:name="android.intent.category.LAUNCHER" />
-                      </intent-filter>
-                  </activity>
-                  <meta-data android:name="flutterEmbedding" android:value="2" />
-
-                  <service
-                      android:name="id.flutter.flutter_background_service.BackgroundService"
-                      android:foregroundServiceType="location"
-                      android:exported="false"
-                      tools:replace="android:exported" />
-
-                  <receiver
-                      android:name="id.flutter.flutter_background_service.WatchdogReceiver"
-                      android:exported="false"
-                      tools:replace="android:exported" />
-              </application>
-          </manifest>
-          '''
-          Path('android/app/src/main/AndroidManifest.xml').write_text(manifest)
-          PYMANIFEST
+          sed -i 's/applicationId = ".*"/applicationId = "com.explapp.walk.legacy"/' android/app/build.gradle.kts || true
+          sed -i 's/applicationId ".*"/applicationId "com.explapp.walk.legacy"/' android/app/build.gradle || true
+          sed -i 's/minSdk = flutter.minSdkVersion/minSdk = 19/' android/app/build.gradle.kts || true
+          sed -i 's/minSdk = [0-9][0-9]*/minSdk = 19/' android/app/build.gradle.kts || true
+          sed -i 's/minSdkVersion flutter.minSdkVersion/minSdkVersion 19/' android/app/build.gradle || true
+          sed -i 's/minSdkVersion [0-9][0-9]*/minSdkVersion 19/' android/app/build.gradle || true
+          sed -i 's/android:label="[^"]*"/android:label="رفيق المشي 4.4"/' android/app/src/main/AndroidManifest.xml || true
 
       - name: Analyze
         run: flutter analyze --no-fatal-infos --no-fatal-warnings
 
-      - name: Build release APK
+      - name: Build APK
         run: flutter build apk --release --no-tree-shake-icons
 
-      - name: Copy APK to repository folder
-        shell: bash
+      - name: Save independent APK
         run: |
-          set -e
           mkdir -p apk
-          cp build/app/outputs/flutter-apk/app-release.apk apk/walking-companion.apk
-          APK_URL="https://github.com/${GITHUB_REPOSITORY}/raw/${GITHUB_REF_NAME}/apk/walking-companion.apk"
-          cat > DOWNLOAD_APK.md <<EOF
-          # رابط تحميل التطبيق
+          cp build/app/outputs/flutter-apk/app-release.apk apk/walk-android-4.4.apk
+          cat > DOWNLOAD_APK.md <<'EOF'
+          # Walk — Android 4.4
 
-          حمّل APK مباشرة:
+          APK مستقل لفرع Android 4.4:
 
-          ${APK_URL}
+          https://github.com/aljwaal1/walk/raw/android-4.4/apk/walk-android-4.4.apk
           EOF
-          {
-            echo "## رابط تحميل APK"
-            echo ""
-            echo "${APK_URL}"
-          } >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Commit APK
-        shell: bash
+      - name: Commit APK to Android 4.4 branch
         run: |
-          set -e
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add apk/walking-companion.apk DOWNLOAD_APK.md
-          if git diff --cached --quiet; then
-            echo "APK already up to date"
-          else
-            git commit -m "ci: update APK build"
-            git push
-          fi
+          git pull --rebase --autostash origin android-4.4
+          git add apk/walk-android-4.4.apk DOWNLOAD_APK.md
+          git commit -m "ci: update Android 4.4 APK" || echo "No changes"
+          git push origin HEAD:android-4.4
