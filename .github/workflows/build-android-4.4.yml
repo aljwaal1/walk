@@ -21,15 +21,22 @@ jobs:
         with:
           gradle-version: '7.6'
       - name: Build legacy APK
-        run: gradle -p legacy-android-4.4 assembleRelease
+        run: gradle -p legacy-android-4.4 clean assembleRelease --stacktrace --no-daemon
       - name: Save APK
         run: |
           mkdir -p apk
           cp legacy-android-4.4/app/build/outputs/apk/release/app-release.apk apk/walk-android-4.4.apk
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: walk-android-4.4
+          path: apk/walk-android-4.4.apk
       - name: Commit APK
         run: |
           git config user.name github-actions
           git config user.email github-actions@github.com
           git add apk/walk-android-4.4.apk
-          git commit -m "Build Android 4.4 walk APK" || exit 0
-          git push
+          if ! git diff --cached --quiet; then
+            git commit -m "Build Android 4.4 walk APK"
+            git push
+          fi
