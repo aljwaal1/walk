@@ -42,18 +42,28 @@ jobs:
       - name: Build legacy APK
         run: |
           set -o pipefail
-          gradle -p legacy-android-4.4 clean assembleRelease --stacktrace --info --no-daemon 2>&1 | tee walk-build.log
+          gradle -p legacy-android-4.4 clean assembleRelease --stacktrace --warning-mode all --no-daemon 2>&1 | tee walk-build.log
 
-      - name: Save APK
+      - name: Save and verify APK
+        shell: bash
         run: |
-          test -f legacy-android-4.4/app/build/outputs/apk/release/app-release.apk
+          set -euo pipefail
+          APK="$(find legacy-android-4.4/app/build/outputs/apk -type f -name '*release*.apk' | head -n 1)"
+          if [ -z "$APK" ] || [ ! -s "$APK" ]; then
+            echo 'Release APK was not produced.'
+            find legacy-android-4.4/app/build/outputs -maxdepth 6 -type f -print || true
+            exit 1
+          fi
+          unzip -t "$APK" >/dev/null
           mkdir -p apk
-          cp legacy-android-4.4/app/build/outputs/apk/release/app-release.apk apk/walk-android-4.4.apk
+          cp "$APK" apk/walk-android-4.4.apk
+          sha256sum apk/walk-android-4.4.apk
 
       - uses: actions/upload-artifact@v4
         with:
           name: walk-android-4.4
           path: apk/walk-android-4.4.apk
+          if-no-files-found: error
 
       - name: Upload build log on failure
         if: failure()
