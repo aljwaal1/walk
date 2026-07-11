@@ -2,61 +2,92 @@ package com.explapp.walklegacy;
 
 import android.Manifest;
 import android.app.Activity;
+import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.location.Location;
 import android.location.LocationListener;
 import android.location.LocationManager;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.SystemClock;
 import android.view.Gravity;
 import android.view.View;
 import android.widget.Button;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 
-public class MainActivity extends Activity implements LocationListener {
-    private LocationManager locationManager;
-    private TextView status, distanceView;
-    private Location lastLocation;
-    private float totalMeters = 0f;
-    private boolean tracking = false;
+import java.util.Locale;
 
-    @Override public void onCreate(Bundle state) {
+public class MainActivity extends Activity implements LocationListener {
+    private static final String PREFS = "walk_legacy";
+    private LocationManager locationManager;
+    private TextView statusView;
+    private TextView distanceView;
+    private TextView speedView;
+    private TextView timeView;
+    private TextView accuracyView;
+    private Button startButton;
+    private Location lastLocation;
+    private float totalMeters;
+    private boolean tracking;
+    private long startedAtElapsed;
+    private long elapsedBeforeStart;
+
+    @Override
+    public void onCreate(Bundle state) {
         super.onCreate(state);
+        loadSavedState();
+
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
-        root.setGravity(Gravity.CENTER);
-        root.setPadding(28, 28, 28, 28);
-        TextView title = new TextView(this);
-        title.setText("مساعد المشي");
-        title.setTextSize(28);
-        title.setGravity(Gravity.CENTER);
-        status = new TextView(this);
-        status.setText("جاهز لبدء المشي");
-        status.setTextSize(18);
-        status.setGravity(Gravity.CENTER);
-        distanceView = new TextView(this);
-        distanceView.setText("المسافة: 0 متر");
-        distanceView.setTextSize(24);
-        distanceView.setGravity(Gravity.CENTER);
-        Button start = new Button(this);
-        start.setText("بدء / إيقاف");
-        start.setOnClickListener(new View.OnClickListener() {
+        root.setGravity(Gravity.CENTER_HORIZONTAL);
+        root.setPadding(28, 32, 28, 28);
+
+        TextView title = createText("مساعد المشي", 28);
+        statusView = createText("جاهز لبدء المشي", 18);
+        distanceView = createText("", 27);
+        speedView = createText("السرعة: 0.0 كم/س", 20);
+        timeView = createText("", 20);
+        accuracyView = createText("دقة GPS: غير متوفرة", 16);
+
+        startButton = new Button(this);
+        startButton.setText("بدء المشي");
+        startButton.setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View v) { toggleTracking(); }
         });
+
+        Button resetButton = new Button(this);
+        resetButton.setText("تصفير الرحلة");
+        resetButton.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View v) { resetTrip(); }
+        });
+
         root.addView(title);
-        root.addView(status);
+        root.addView(statusView);
         root.addView(distanceView);
-        root.addView(start);
+        root.addView(speedView);
+        root.addView(timeView);
+        root.addView(accuracyView);
+        root.addView(startButton);
+        root.addView(resetButton);
         setContentView(root);
+
         locationManager = (LocationManager) getSystemService(LOCATION_SERVICE);
+        refreshViews();
+    }
+
+    private TextView createText(String text, int size) {
+        TextView view = new TextView(this);
+        view.setText(text);
+        view.setTextSize(size);
+        view.setGravity(Gravity.CENTER);
+        view.setPadding(8, 12, 8, 12);
+        return view;
     }
 
     private void toggleTracking() {
         if (tracking) {
-            tracking = false;
-            locationManager.removeUpdates(this);
-            status.setText("تم إيقاف التتبع");
+            stopTracking();
             return;
         }
         if (Build.VERSION.SDK_INT >= 23 && checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
@@ -68,26 +99,126 @@ public class MainActivity extends Activity implements LocationListener {
 
     private void startTracking() {
         try {
+            if (!locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
+                statusView.setText("يرجى تشغيل GPS أولاً");
+                return;
+            }
             tracking = true;
             lastLocation = null;
+            startedAtElapsed = SystemClock.elapsedRealtime();
             locationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER, 2000L, 2f, this);
-            status.setText("جاري حساب المسافة عبر GPS");
+            statusView.setText("جاري تتبع المشي عبر GPS");
+            startButton.setText("إيقاف المشي");
+            refreshViews();
         } catch (SecurityException e) {
-            status.setText("يرجى السماح باستخدام الموقع");
+            tracking = false;
+            statusView.setText("يرجى السماح باستخدام الموقع");
         }
     }
 
-    @Override public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] results) {
-        super.onRequestPermissionsResult(requestCode, permissions, results);
-        if (requestCode == 7 && results.length > 0 && results[0] == PackageManager.PERMISSION_GRANTED) startTracking();
+    private void stopTracking() {
+        if (!tracking) return;
+        tracking = false;
+        elapsedBeforeStart += SystemClock.elapsedRealtime() - startedAtElapsed;
+        locationManager.removeUpdates(this);
+        lastLocation = null;
+        statusView.setText("تم إيقاف التتبع");
+        startButton.setText("متابعة المشي");
+        speedView.setText("السرعة: 0.0 كم/س");
+        saveState();
+        refreshViews();
     }
 
-    @Override public void onLocationChanged(Location location) {
-        if (lastLocation != null && location.getAccuracy() <= 40f) totalMeters += lastLocation.distanceTo(location);
-        lastLocation = location;
-        distanceView.setText("المسافة: " + Math.round(totalMeters) + " متر");
+    private void resetTrip() {
+        if (tracking) stopTracking();
+        totalMeters = 0f;
+        elapsedBeforeStart = 0L;
+        lastLocation = null;
+        statusView.setText("تم تصفير الرحلة");
+        accuracyView.setText("دقة GPS: غير متوفرة");
+        startButton.setText("بدء المشي");
+        saveState();
+        refreshViews();
     }
+
+    private long currentElapsedMillis() {
+        if (tracking) return elapsedBeforeStart + (SystemClock.elapsedRealtime() - startedAtElapsed);
+        return elapsedBeforeStart;
+    }
+
+    private void refreshViews() {
+        if (distanceView == null) return;
+        if (totalMeters < 1000f) {
+            distanceView.setText("المسافة: " + Math.round(totalMeters) + " متر");
+        } else {
+            distanceView.setText(String.format(Locale.US, "المسافة: %.2f كم", totalMeters / 1000f));
+        }
+        long totalSeconds = currentElapsedMillis() / 1000L;
+        long hours = totalSeconds / 3600L;
+        long minutes = (totalSeconds % 3600L) / 60L;
+        long seconds = totalSeconds % 60L;
+        timeView.setText(String.format(Locale.US, "المدة: %02d:%02d:%02d", hours, minutes, seconds));
+        if (tracking) {
+            timeView.postDelayed(new Runnable() {
+                @Override public void run() {
+                    if (tracking) refreshViews();
+                }
+            }, 1000L);
+        }
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] results) {
+        super.onRequestPermissionsResult(requestCode, permissions, results);
+        if (requestCode == 7 && results.length > 0 && results[0] == PackageManager.PERMISSION_GRANTED) {
+            startTracking();
+        } else if (requestCode == 7) {
+            statusView.setText("لم يتم منح صلاحية الموقع");
+        }
+    }
+
+    @Override
+    public void onLocationChanged(Location location) {
+        if (!tracking) return;
+        float accuracy = location.hasAccuracy() ? location.getAccuracy() : 999f;
+        accuracyView.setText("دقة GPS: " + Math.round(accuracy) + " متر");
+
+        if (lastLocation != null && accuracy <= 40f) {
+            float segment = lastLocation.distanceTo(location);
+            if (segment >= 1f && segment <= 100f) totalMeters += segment;
+        }
+        lastLocation = location;
+
+        float kmh = location.hasSpeed() ? location.getSpeed() * 3.6f : 0f;
+        speedView.setText(String.format(Locale.US, "السرعة: %.1f كم/س", kmh));
+        saveState();
+        refreshViews();
+    }
+
+    private void loadSavedState() {
+        SharedPreferences preferences = getSharedPreferences(PREFS, MODE_PRIVATE);
+        totalMeters = preferences.getFloat("distance", 0f);
+        elapsedBeforeStart = preferences.getLong("elapsed", 0L);
+    }
+
+    private void saveState() {
+        getSharedPreferences(PREFS, MODE_PRIVATE).edit()
+                .putFloat("distance", totalMeters)
+                .putLong("elapsed", currentElapsedMillis())
+                .apply();
+    }
+
+    @Override protected void onPause() {
+        super.onPause();
+        if (tracking) saveState();
+    }
+
+    @Override protected void onDestroy() {
+        if (locationManager != null) locationManager.removeUpdates(this);
+        super.onDestroy();
+    }
+
     @Override public void onStatusChanged(String provider, int statusCode, Bundle extras) {}
-    @Override public void onProviderEnabled(String provider) { status.setText("GPS متاح"); }
-    @Override public void onProviderDisabled(String provider) { status.setText("يرجى تشغيل GPS"); }
+    @Override public void onProviderEnabled(String provider) { statusView.setText("GPS متاح"); }
+    @Override public void onProviderDisabled(String provider) { statusView.setText("يرجى تشغيل GPS"); }
 }
