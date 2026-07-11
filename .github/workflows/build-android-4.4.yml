@@ -58,5 +58,7 @@ jobs:
           git config user.name github-actions
           git config user.email github-actions@github.com
           git add apk/walk-android-4.4.apk
-          git diff --cached --quiet || git commit -m 'Build Walk Android 4.4 APK'
-          git push origin HEAD:android-4.4
+          if ! git diff --cached --quiet; then
+            git commit -m 'Build Walk Android 4.4 APK'
+            git push origin HEAD:android-4.4
+          fi
