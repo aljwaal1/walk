@@ -40,7 +40,9 @@ jobs:
           gradle-version: '7.6.4'
 
       - name: Build legacy APK
-        run: gradle -p legacy-android-4.4 clean assembleRelease --stacktrace --no-daemon
+        run: |
+          set -o pipefail
+          gradle -p legacy-android-4.4 clean assembleRelease --stacktrace --info --no-daemon 2>&1 | tee walk-build.log
 
       - name: Save APK
         run: |
@@ -52,6 +54,14 @@ jobs:
         with:
           name: walk-android-4.4
           path: apk/walk-android-4.4.apk
+
+      - name: Upload build log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: walk-android-4.4-build-log
+          path: walk-build.log
+          if-no-files-found: ignore
 
       - name: Commit APK
         run: |
