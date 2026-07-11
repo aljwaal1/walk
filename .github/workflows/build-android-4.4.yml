@@ -42,29 +42,33 @@ jobs:
         shell: bash
         run: |
           set -o pipefail
-          gradle -p legacy-android-4.4 clean assembleRelease --stacktrace --info --no-daemon 2>&1 | tee walk-build.log
+          gradle -p legacy-android-4.4 clean assembleRelease --stacktrace --info --warning-mode all --no-daemon 2>&1 | tee walk-build.log
       - name: Save and verify APK
         shell: bash
         run: |
           set -euo pipefail
+          find legacy-android-4.4/app/build/outputs -maxdepth 6 -type f -print | sort | tee walk-output-files.log
           APK="$(find legacy-android-4.4/app/build/outputs/apk -type f -name '*release*.apk' | head -n 1)"
           test -n "$APK"
           test -s "$APK"
           unzip -t "$APK" >/dev/null
           mkdir -p apk
           cp "$APK" apk/walk-android-4.4.apk
-          sha256sum apk/walk-android-4.4.apk
+          sha256sum apk/walk-android-4.4.apk | tee walk-sha256.txt
       - uses: actions/upload-artifact@v4
         with:
           name: walk-android-4.4
           path: apk/walk-android-4.4.apk
           if-no-files-found: error
-      - name: Upload build log on failure
-        if: failure()
+      - name: Upload build diagnostics
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: walk-android-4.4-build-log
-          path: walk-build.log
+          name: walk-android-4.4-diagnostics
+          path: |
+            walk-build.log
+            walk-output-files.log
+            walk-sha256.txt
           if-no-files-found: ignore
       - name: Commit APK
         shell: bash
