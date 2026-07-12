@@ -197,7 +197,8 @@ public class MainActivity extends Activity implements LocationListener {
         float accuracy = location.hasAccuracy() ? location.getAccuracy() : 999f;
         accuracyView.setText("دقة GPS: " + Math.round(accuracy) + " متر");
 
-        if (lastLocation != null && accuracy <= 40f) {
+        if (accuracy > 40f) { refreshViews(); return; }
+        if (lastLocation != null) {
             float segment = lastLocation.distanceTo(location);
             if (segment >= 1f && segment <= 100f) totalMeters += segment;
         }
