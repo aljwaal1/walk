@@ -26,9 +26,11 @@ public class MainActivity extends Activity implements LocationListener {
     private TextView speedView;
     private TextView timeView;
     private TextView accuracyView;
+    private TextView goalView;
     private Button startButton;
     private Location lastLocation;
     private float totalMeters;
+    private float goalMeters;
     private boolean tracking;
     private long startedAtElapsed;
     private long elapsedBeforeStart;
@@ -42,10 +44,12 @@ public class MainActivity extends Activity implements LocationListener {
         root.setOrientation(LinearLayout.VERTICAL);
         root.setGravity(Gravity.CENTER_HORIZONTAL);
         root.setPadding(28, 32, 28, 28);
+        root.setBackgroundColor(android.graphics.Color.rgb(244, 250, 247));
 
         TextView title = createText("مساعد المشي", 28);
         statusView = createText("جاهز لبدء المشي", 18);
         distanceView = createText("", 27);
+        goalView = createText("", 17);
         speedView = createText("السرعة: 0.0 كم/س", 20);
         timeView = createText("", 20);
         accuracyView = createText("دقة GPS: غير متوفرة", 16);
@@ -54,6 +58,12 @@ public class MainActivity extends Activity implements LocationListener {
         startButton.setText("بدء المشي");
         startButton.setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View v) { toggleTracking(); }
+        });
+
+        Button goalButton = new Button(this);
+        goalButton.setText("تغيير الهدف اليومي: " + Math.round(goalMeters / 1000f) + " كم");
+        goalButton.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View v) { cycleGoal(); goalButton.setText("تغيير الهدف اليومي: " + Math.round(goalMeters / 1000f) + " كم"); }
         });
 
         Button resetButton = new Button(this);
@@ -65,10 +75,12 @@ public class MainActivity extends Activity implements LocationListener {
         root.addView(title);
         root.addView(statusView);
         root.addView(distanceView);
+        root.addView(goalView);
         root.addView(speedView);
         root.addView(timeView);
         root.addView(accuracyView);
         root.addView(startButton);
+        root.addView(goalButton);
         root.addView(resetButton);
         setContentView(root);
 
@@ -158,6 +170,8 @@ public class MainActivity extends Activity implements LocationListener {
         long minutes = (totalSeconds % 3600L) / 60L;
         long seconds = totalSeconds % 60L;
         timeView.setText(String.format(Locale.US, "المدة: %02d:%02d:%02d", hours, minutes, seconds));
+        float progress = goalMeters > 0f ? Math.min(100f, (totalMeters * 100f) / goalMeters) : 0f;
+        goalView.setText(String.format(Locale.US, "هدف اليوم: %.0f / %.0f متر  (%.0f%%)", totalMeters, goalMeters, progress));
         if (tracking) {
             timeView.postDelayed(new Runnable() {
                 @Override public void run() {
@@ -195,16 +209,27 @@ public class MainActivity extends Activity implements LocationListener {
         refreshViews();
     }
 
+    private void cycleGoal() {
+        if (goalMeters < 3000f) goalMeters = 3000f;
+        else if (goalMeters < 5000f) goalMeters = 5000f;
+        else if (goalMeters < 10000f) goalMeters = 10000f;
+        else goalMeters = 1000f;
+        saveState();
+        refreshViews();
+    }
+
     private void loadSavedState() {
         SharedPreferences preferences = getSharedPreferences(PREFS, MODE_PRIVATE);
         totalMeters = preferences.getFloat("distance", 0f);
         elapsedBeforeStart = preferences.getLong("elapsed", 0L);
+        goalMeters = preferences.getFloat("goal", 3000f);
     }
 
     private void saveState() {
         getSharedPreferences(PREFS, MODE_PRIVATE).edit()
                 .putFloat("distance", totalMeters)
                 .putLong("elapsed", currentElapsedMillis())
+                .putFloat("goal", goalMeters)
                 .apply();
     }
 
