@@ -34,6 +34,8 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '7.6.4'
+      - name: Lint native Android app
+        run: gradle -p legacy-android-4.4 lintDebug --stacktrace --no-daemon
       - name: Build signed debug APK
         run: |
           set -o pipefail
