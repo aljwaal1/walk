@@ -3,21 +3,25 @@ package com.explapp.walklegacy;
 import android.media.AudioManager;
 import android.media.ToneGenerator;
 import android.os.Bundle;
+import android.os.Handler;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.TextView;
 
-/** Interaction sounds for the Android 4.4 walking companion only. */
+/** App-specific interaction and tracking sounds for the Android 4.4 walking companion. */
 public class SoundMainActivity extends MainActivity {
+    private final Handler observer = new Handler();
     private ToneGenerator tones;
     private float downX;
     private float downY;
     private long lastSoundAt;
+    private String lastState = "";
 
     @Override public void onCreate(Bundle savedInstanceState) {
         tones = new ToneGenerator(AudioManager.STREAM_MUSIC, 48);
         super.onCreate(savedInstanceState);
+        observer.post(statusWatcher);
     }
 
     @Override public boolean dispatchTouchEvent(MotionEvent event) {
@@ -34,19 +38,72 @@ public class SoundMainActivity extends MainActivity {
     }
 
     private void playFor(View view) {
-        if (tones == null || System.currentTimeMillis() - lastSoundAt < 70L) return;
-        lastSoundAt = System.currentTimeMillis();
         String text = view instanceof TextView ? ((TextView) view).getText().toString() : "";
-        if (containsAny(text, "بدء", "ابدأ", "استكمال", "حفظ")) {
-            tones.startTone(ToneGenerator.TONE_PROP_ACK, 120);
-        } else if (containsAny(text, "إيقاف", "إنهاء", "رجوع", "العودة")) {
-            tones.startTone(ToneGenerator.TONE_PROP_BEEP2, 85);
-        } else if (containsAny(text, "حذف", "مسح", "إلغاء")) {
-            tones.startTone(ToneGenerator.TONE_PROP_NACK, 110);
-        } else if (containsAny(text, "شارات", "السجل", "التالي")) {
-            tones.startTone(ToneGenerator.TONE_DTMF_6, 70);
+        if (containsAny(text, "بدء المشي", "متابعة المشي")) {
+            play(ToneGenerator.TONE_PROP_ACK, 120);
+        } else if (containsAny(text, "إيقاف مؤقت")) {
+            play(ToneGenerator.TONE_PROP_BEEP2, 90);
+        } else if (containsAny(text, "إنهاء وحفظ", "حفظ")) {
+            play(ToneGenerator.TONE_CDMA_CONFIRM, 125);
+        } else if (containsAny(text, "حذف", "تصفير", "مسح", "إلغاء")) {
+            play(ToneGenerator.TONE_PROP_NACK, 115);
+        } else if (containsAny(text, "المشي", "السجل", "الإنجازات", "الشارات")) {
+            play(ToneGenerator.TONE_DTMF_6, 70);
+        } else if (containsAny(text, "تغيير الهدف", "مدة التحدي")) {
+            play(ToneGenerator.TONE_DTMF_5, 70);
+        } else if (containsAny(text, "رجوع", "العودة")) {
+            play(ToneGenerator.TONE_PROP_BEEP2, 80);
         } else {
-            tones.startTone(ToneGenerator.TONE_PROP_BEEP, 58);
+            play(ToneGenerator.TONE_PROP_BEEP, 58);
+        }
+    }
+
+    private final Runnable statusWatcher = new Runnable() {
+        @Override public void run() {
+            if (tones == null) return;
+            String snapshot = collectText(getWindow().getDecorView());
+            String state = stateFrom(snapshot);
+            if (lastState.length() == 0) {
+                lastState = state;
+            } else if (state.length() > 0 && !state.equals(lastState)) {
+                if ("active".equals(state)) {
+                    play(ToneGenerator.TONE_CDMA_CONFIRM, 95);
+                } else if ("paused".equals(state)) {
+                    play(ToneGenerator.TONE_PROP_BEEP2, 95);
+                } else if ("weak".equals(state)) {
+                    play(ToneGenerator.TONE_CDMA_NETWORK_BUSY_ONE_SHOT, 120);
+                } else if ("gps_off".equals(state)) {
+                    play(ToneGenerator.TONE_PROP_NACK, 150);
+                } else if ("history".equals(state) && "active".equals(lastState)) {
+                    play(ToneGenerator.TONE_PROP_ACK, 150);
+                }
+                lastState = state;
+            }
+            observer.postDelayed(this, 320L);
+        }
+    };
+
+    private String stateFrom(String text) {
+        if (containsAny(text, "إشارة ضعيفة")) return "weak";
+        if (containsAny(text, "التتبع نشط في الخلفية")) return "active";
+        if (containsAny(text, "الجلسة متوقفة مؤقتاً")) return "paused";
+        if (containsAny(text, "GPS متوقف", "يحتاج تتبع المسافة إلى إذن الموقع")) return "gps_off";
+        if (containsAny(text, "سجل المشي", "الجلسات الأخيرة")) return "history";
+        return "idle";
+    }
+
+    private String collectText(View view) {
+        StringBuilder builder = new StringBuilder();
+        appendText(view, builder);
+        return builder.toString();
+    }
+
+    private void appendText(View view, StringBuilder builder) {
+        if (view == null || view.getVisibility() != View.VISIBLE) return;
+        if (view instanceof TextView) builder.append('|').append(((TextView) view).getText());
+        if (view instanceof ViewGroup) {
+            ViewGroup group = (ViewGroup) view;
+            for (int i = 0; i < group.getChildCount(); i++) appendText(group.getChildAt(i), builder);
         }
     }
 
@@ -66,12 +123,24 @@ public class SoundMainActivity extends MainActivity {
         return view;
     }
 
+    private void play(int tone, int durationMs) {
+        if (tones == null || System.currentTimeMillis() - lastSoundAt < 75L) return;
+        lastSoundAt = System.currentTimeMillis();
+        tones.startTone(tone, durationMs);
+    }
+
     private boolean containsAny(String text, String... words) {
         for (String word : words) if (text.contains(word)) return true;
         return false;
     }
 
+    @Override public void onBackPressed() {
+        play(ToneGenerator.TONE_PROP_BEEP2, 80);
+        super.onBackPressed();
+    }
+
     @Override protected void onDestroy() {
+        observer.removeCallbacksAndMessages(null);
         if (tones != null) {
             tones.release();
             tones = null;
