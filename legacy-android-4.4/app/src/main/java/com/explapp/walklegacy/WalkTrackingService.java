@@ -46,6 +46,7 @@ public class WalkTrackingService extends Service implements LocationListener {
     private final Runnable ticker = new Runnable() {
         public void run() {
             if (tracking) {
+                if (lastAcceptedTime > 0L && System.currentTimeMillis() - lastAcceptedTime > 8000L) currentSpeedKmh = 0f;
                 persist(false);
                 broadcastState();
                 if (SystemClock.elapsedRealtime() - lastNotificationElapsed >= 15000L) {
@@ -124,7 +125,7 @@ public class WalkTrackingService extends Service implements LocationListener {
         try { locationManager.removeUpdates(this); } catch (SecurityException ignored) { }
         long duration = elapsedBeforeStart;
         float distance = distanceMeters;
-        if (duration >= 30000L || distance >= 20f) saveCompletedSession(duration, distance);
+        if (duration >= 10000L || distance >= 5f) saveCompletedSession(duration, distance);
         clearCurrent();
         broadcastState();
         stopForeground(true);
@@ -158,7 +159,7 @@ public class WalkTrackingService extends Service implements LocationListener {
             if (gapMillis <= 0L) gapMillis = 2000L;
             float seconds = gapMillis / 1000f;
             float segment = lastLocation.distanceTo(location);
-            float noiseFloor = Math.max(1.4f, Math.min(lastLocation.getAccuracy(), accuracy) * .12f);
+            float noiseFloor = Math.max(1.5f, (lastLocation.getAccuracy() + accuracy) * .08f);
             float plausibleLimit = Math.max(12f, seconds * 4.5f + Math.min(accuracy, 20f) * .35f);
             if (segment >= noiseFloor && segment <= plausibleLimit && gapMillis <= 15000L) {
                 distanceMeters += segment;
