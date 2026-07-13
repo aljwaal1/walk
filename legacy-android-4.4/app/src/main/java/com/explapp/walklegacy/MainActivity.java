@@ -11,11 +11,14 @@ import android.content.IntentFilter;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.graphics.Canvas;
+import android.graphics.ColorFilter;
 import android.graphics.Color;
 import android.graphics.Paint;
 import android.graphics.Path;
+import android.graphics.PixelFormat;
 import android.graphics.RectF;
 import android.graphics.Typeface;
+import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
 import android.location.LocationManager;
 import android.os.Build;
@@ -127,9 +130,9 @@ public class MainActivity extends Activity {
         LinearLayout nav = new LinearLayout(this);
         nav.setPadding(dp(4), dp(4), dp(4), dp(4));
         nav.setBackgroundColor(Color.WHITE);
-        nav.addView(navButton("المشي", android.R.drawable.ic_menu_mylocation, 0), navLp());
-        nav.addView(navButton("السجل", android.R.drawable.ic_menu_recent_history, 1), navLp());
-        nav.addView(navButton("الإنجازات", android.R.drawable.star_big_on, 2), navLp());
+        nav.addView(navButton("المشي", 0), navLp());
+        nav.addView(navButton("السجل", 1), navLp());
+        nav.addView(navButton("الإنجازات", 2), navLp());
         root.addView(nav);
         setContentView(root);
         content.setAlpha(0f);
@@ -256,8 +259,7 @@ public class MainActivity extends Activity {
         LinearLayout streakCard = card();
         streakCard.setGravity(Gravity.CENTER);
         ImageView icon = new ImageView(this);
-        icon.setImageResource(android.R.drawable.star_big_on);
-        icon.setColorFilter(ORANGE);
+        icon.setImageDrawable(new NavGlyph(2, ORANGE, dp(52)));
         streakCard.addView(icon, new LinearLayout.LayoutParams(dp(58), dp(58)));
         TextView number = text(streak + " أيام", 26, GREEN_DARK, Typeface.BOLD);
         number.setGravity(Gravity.CENTER);
@@ -280,8 +282,7 @@ public class MainActivity extends Activity {
             badge.setPadding(dp(13), dp(12), dp(13), dp(12));
             badge.setBackground(round(earned[i] ? Color.rgb(232, 248, 239) : Color.WHITE, 15, Color.rgb(222, 233, 227), 1));
             ImageView badgeIcon = new ImageView(this);
-            badgeIcon.setImageResource(earned[i] ? android.R.drawable.star_big_on : android.R.drawable.ic_lock_idle_lock);
-            badgeIcon.setColorFilter(earned[i] ? ORANGE : Color.rgb(160, 172, 177));
+            badgeIcon.setImageDrawable(new NavGlyph(earned[i] ? 2 : 3, earned[i] ? ORANGE : Color.rgb(160, 172, 177), dp(42)));
             badge.addView(badgeIcon, new LinearLayout.LayoutParams(dp(48), dp(48)));
             LinearLayout copy = new LinearLayout(this);
             copy.setOrientation(LinearLayout.VERTICAL);
@@ -406,18 +407,19 @@ public class MainActivity extends Activity {
     private String formatDistance(float meters) { return meters < 1000f ? Math.round(meters) + " متر" : String.format(Locale.US, "%.2f كم", meters / 1000f); }
     private String formatClock(long millis) { long s = millis / 1000L; return String.format(Locale.US, "%02d:%02d:%02d", s / 3600L, (s % 3600L) / 60L, s % 60L); }
 
-    private Button navButton(String label, int icon, final int target) {
+    private Button navButton(String label, final int target) {
         Button button = new Button(this);
         button.setText(label); button.setTextSize(12); button.setAllCaps(false); button.setGravity(Gravity.CENTER);
         button.setTextColor(section == target ? GREEN : MUTED); button.setTypeface(Typeface.DEFAULT, section == target ? Typeface.BOLD : Typeface.NORMAL);
-        button.setCompoundDrawablesWithIntrinsicBounds(0, icon, 0, 0); button.setCompoundDrawablePadding(dp(1)); button.setBackgroundColor(Color.TRANSPARENT);
+        Drawable icon = new NavGlyph(target, section == target ? GREEN : MUTED, dp(23));
+        button.setCompoundDrawables(null, icon, null, null); button.setCompoundDrawablePadding(dp(2)); button.setBackgroundColor(Color.TRANSPARENT);
         button.setOnClickListener(new View.OnClickListener() { public void onClick(View view) { if (target == 0) showSession(); else if (target == 1) showHistory(); else showAchievements(); } });
         return button;
     }
 
     private LinearLayout card() { LinearLayout card = new LinearLayout(this); card.setOrientation(LinearLayout.VERTICAL); card.setPadding(dp(14), dp(12), dp(14), dp(12)); card.setBackground(round(Color.WHITE, 16, Color.rgb(222, 233, 227), 1)); return card; }
     private TextView stat(String label, String value, int color) { TextView stat = text(value + "\n" + label, 15, color, Typeface.BOLD); stat.setGravity(Gravity.CENTER); stat.setBackground(round(Color.WHITE, 15, Color.rgb(222, 233, 227), 1)); return stat; }
-    private LinearLayout empty(String title, String body) { LinearLayout empty = card(); empty.setGravity(Gravity.CENTER); empty.setPadding(dp(20), dp(38), dp(20), dp(38)); ImageView image = new ImageView(this); image.setImageResource(android.R.drawable.ic_menu_recent_history); image.setColorFilter(GREEN); empty.addView(image, new LinearLayout.LayoutParams(dp(58), dp(58))); TextView heading = text(title, 20, INK, Typeface.BOLD); heading.setGravity(Gravity.CENTER); empty.addView(heading, lp(-1, -2, 0, 0, 10, 0, 5)); TextView copy = text(body, 15, MUTED, Typeface.NORMAL); copy.setGravity(Gravity.CENTER); empty.addView(copy); return empty; }
+    private LinearLayout empty(String title, String body) { LinearLayout empty = card(); empty.setGravity(Gravity.CENTER); empty.setPadding(dp(20), dp(38), dp(20), dp(38)); ImageView image = new ImageView(this); image.setImageDrawable(new NavGlyph(1, GREEN, dp(52))); empty.addView(image, new LinearLayout.LayoutParams(dp(58), dp(58))); TextView heading = text(title, 20, INK, Typeface.BOLD); heading.setGravity(Gravity.CENTER); empty.addView(heading, lp(-1, -2, 0, 0, 10, 0, 5)); TextView copy = text(body, 15, MUTED, Typeface.NORMAL); copy.setGravity(Gravity.CENTER); empty.addView(copy); return empty; }
     private TextView text(String value, int size, int color, int style) { TextView text = new TextView(this); text.setText(value); text.setTextSize(size); text.setTextColor(color); text.setTypeface(Typeface.DEFAULT, style); text.setLineSpacing(0, 1.08f); return text; }
     private Button primary(String label) { return colored(label, GREEN); }
     private Button colored(String label, int color) { Button button = new Button(this); button.setText(label); button.setTextSize(16); button.setTextColor(Color.WHITE); button.setTypeface(Typeface.DEFAULT, Typeface.BOLD); button.setAllCaps(false); button.setGravity(Gravity.CENTER); button.setPadding(dp(8), 0, dp(8), 0); button.setBackground(round(color, 14)); return button; }
@@ -444,6 +446,40 @@ public class MainActivity extends Activity {
     }
     @Override protected void onPause() { handler.removeCallbacks(uiTick); if (receiverRegistered) { unregisterReceiver(updates); receiverRegistered = false; } super.onPause(); }
     @Override public void onBackPressed() { if (section != 0) showSession(); else super.onBackPressed(); }
+
+    private static class NavGlyph extends Drawable {
+        private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final Path path = new Path();
+        private final int type;
+        private final int size;
+        NavGlyph(int type, int color, int size) { this.type = type; this.size = size; paint.setColor(color); paint.setStyle(Paint.Style.STROKE); paint.setStrokeWidth(Math.max(2f, size * .085f)); paint.setStrokeCap(Paint.Cap.ROUND); paint.setStrokeJoin(Paint.Join.ROUND); setBounds(0, 0, size, size); }
+        @Override public void draw(Canvas canvas) {
+            RectF b = new RectF(getBounds()); float w = b.width(), h = b.height(), l = b.left, t = b.top;
+            paint.setStyle(Paint.Style.STROKE); path.reset();
+            if (type == 0) {
+                canvas.drawOval(new RectF(l+w*.18f,t+h*.11f,l+w*.48f,t+h*.48f), paint);
+                canvas.drawOval(new RectF(l+w*.53f,t+h*.52f,l+w*.82f,t+h*.88f), paint);
+                canvas.drawCircle(l+w*.20f,t+h*.11f,w*.035f,paint); canvas.drawCircle(l+w*.31f,t+h*.07f,w*.035f,paint); canvas.drawCircle(l+w*.42f,t+h*.09f,w*.035f,paint);
+                canvas.drawCircle(l+w*.58f,t+h*.52f,w*.035f,paint); canvas.drawCircle(l+w*.69f,t+h*.48f,w*.035f,paint); canvas.drawCircle(l+w*.80f,t+h*.50f,w*.035f,paint);
+            } else if (type == 1) {
+                canvas.drawRoundRect(new RectF(l+w*.12f,t+h*.16f,l+w*.88f,t+h*.86f),w*.1f,w*.1f,paint);
+                canvas.drawLine(l+w*.27f,t+h*.08f,l+w*.27f,t+h*.28f,paint); canvas.drawLine(l+w*.73f,t+h*.08f,l+w*.73f,t+h*.28f,paint);
+                canvas.drawLine(l+w*.25f,t+h*.66f,l+w*.42f,t+h*.51f,paint); canvas.drawLine(l+w*.42f,t+h*.51f,l+w*.58f,t+h*.62f,paint); canvas.drawLine(l+w*.58f,t+h*.62f,l+w*.77f,t+h*.39f,paint);
+            } else if (type == 2) {
+                for (int i=0;i<10;i++) { double a=-Math.PI/2+i*Math.PI/5; float r=i%2==0?w*.39f:w*.19f; float x=l+w*.5f+(float)Math.cos(a)*r; float y=t+h*.5f+(float)Math.sin(a)*r; if(i==0)path.moveTo(x,y);else path.lineTo(x,y); } path.close(); canvas.drawPath(path,paint);
+                canvas.drawCircle(l+w*.5f,t+h*.5f,w*.09f,paint);
+            } else {
+                canvas.drawRoundRect(new RectF(l+w*.22f,t+h*.42f,l+w*.78f,t+h*.88f),w*.08f,w*.08f,paint);
+                canvas.drawArc(new RectF(l+w*.30f,t+h*.10f,l+w*.70f,t+h*.62f),190,160,false,paint);
+                canvas.drawCircle(l+w*.5f,t+h*.64f,w*.045f,paint); canvas.drawLine(l+w*.5f,t+h*.68f,l+w*.5f,t+h*.77f,paint);
+            }
+        }
+        @Override public void setAlpha(int alpha) { paint.setAlpha(alpha); }
+        @Override public void setColorFilter(ColorFilter filter) { paint.setColorFilter(filter); }
+        @Override public int getOpacity() { return PixelFormat.TRANSLUCENT; }
+        @Override public int getIntrinsicWidth() { return size; }
+        @Override public int getIntrinsicHeight() { return size; }
+    }
 
     private static class CircularProgressView extends View {
         private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);

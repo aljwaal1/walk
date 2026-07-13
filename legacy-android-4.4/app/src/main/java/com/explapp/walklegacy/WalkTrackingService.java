@@ -232,7 +232,7 @@ public class WalkTrackingService extends Service implements LocationListener {
         if (Build.VERSION.SDK_INT >= 23) pendingFlags |= PendingIntent.FLAG_IMMUTABLE;
         PendingIntent pending = PendingIntent.getActivity(this, 0, open, pendingFlags);
         Notification.Builder builder = Build.VERSION.SDK_INT >= 26 ? new Notification.Builder(this, CHANNEL) : new Notification.Builder(this);
-        return builder.setSmallIcon(android.R.drawable.ic_menu_mylocation)
+        return builder.setSmallIcon(R.drawable.ic_walk_notification)
                 .setContentTitle("رفيق المشي • التتبع نشط")
                 .setContentText(String.format(Locale.US, "%.2f كم • %s", distanceMeters / 1000f, formatTime(elapsedMillis())))
                 .setContentIntent(pending).setOngoing(true).setOnlyAlertOnce(true).setShowWhen(false).build();
