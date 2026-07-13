@@ -186,7 +186,7 @@ public class MainActivity extends Activity {
         Button challengeButton = outline("مدة التحدي");
         challengeButton.setOnClickListener(new View.OnClickListener() { public void onClick(View view) { cycleChallenge(); showSession(); } });
         Button finishButton = colored("إنهاء وحفظ", BLUE);
-        finishButton.setEnabled(elapsedMillis > 0 || distanceMeters > 0);
+        finishButton.setEnabled(elapsedMillis >= 10000L || distanceMeters >= 5f);
         finishButton.setAlpha(finishButton.isEnabled() ? 1f : .45f);
         finishButton.setOnClickListener(new View.OnClickListener() { public void onClick(View view) { confirmFinish(); } });
         actions.addView(challengeButton, weight(1, 0, 4));
@@ -196,7 +196,7 @@ public class MainActivity extends Activity {
         reset.setTextColor(RED);
         reset.setOnClickListener(new View.OnClickListener() { public void onClick(View view) { confirmResetCurrent(); } });
         content.addView(reset, lp(-1, dp(49)));
-        TextView hint = text("عند بدء المشي يظهر إشعار صامت ويحافظ على التتبع عند قفل الشاشة. اخرج إلى مكان مكشوف حتى تستقر إشارة GPS.", 13, MUTED, Typeface.NORMAL);
+        TextView hint = text("عند بدء المشي يظهر إشعار صامت ويحافظ على التتبع عند قفل الشاشة. يمكن حفظ الجلسة بعد 10 ثوانٍ أو 5 أمتار، واخرج إلى مكان مكشوف حتى تستقر إشارة GPS.", 13, MUTED, Typeface.NORMAL);
         hint.setGravity(Gravity.CENTER);
         content.addView(hint, lp(-1, -2, 0, 5, 9, 5, 0));
         refreshSessionViews();
