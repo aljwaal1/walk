@@ -3,7 +3,7 @@ name: Build Android 4.4 APK
 on:
   workflow_dispatch:
   push:
-    branches: [ android-4.4 ]
+    branches: [ main ]
     paths-ignore:
       - 'apk/**'
       - 'DOWNLOAD_APK.md'
