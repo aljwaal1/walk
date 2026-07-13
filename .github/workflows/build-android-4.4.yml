@@ -35,7 +35,9 @@ jobs:
         with:
           gradle-version: '7.6.4'
       - name: Lint native Android app
-        run: gradle -p legacy-android-4.4 lintDebug --stacktrace --no-daemon
+        run: |
+          set -o pipefail
+          gradle -p legacy-android-4.4 lintDebug --stacktrace --no-daemon 2>&1 | tee walk-lint.log
       - name: Build signed debug APK
         run: |
           set -o pipefail
@@ -63,6 +65,20 @@ jobs:
           name: walk-android-4.4-build-log
           path: walk-build.log
           if-no-files-found: ignore
+      - name: Persist failure log for diagnosis
+        if: failure()
+        run: |
+          set -euo pipefail
+          mkdir -p apk
+          {
+            test -f walk-lint.log && cat walk-lint.log || true
+            test -f walk-build.log && cat walk-build.log || true
+          } > apk/walk-build-failure.log
+          git config user.name github-actions
+          git config user.email github-actions@github.com
+          git add apk/walk-build-failure.log
+          git diff --cached --quiet || (git commit -m 'Record Walk Android 4.4 build failure' && git push origin HEAD:android-4.4)
+
       - name: Commit APK
         run: |
           set -euo pipefail
