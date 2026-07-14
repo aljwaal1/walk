@@ -84,25 +84,68 @@ public class WalkTrackingService extends Service implements LocationListener {
         lastLocation = null;
         lastAcceptedTime = 0L;
         currentSpeedKmh = 0f;
+        accuracyMeters = -1f;
         startForeground(NOTIFICATION_ID, notification());
-        try {
-            if (Build.VERSION.SDK_INT >= 23 && checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
-                tracking = false;
-                stopForeground(true);
-                stopSelf();
-                return;
-            }
-            locationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER, 2000L, 2f, this);
-        } catch (SecurityException ignored) {
-            tracking = false;
-            stopForeground(true);
-            stopSelf();
+        if (Build.VERSION.SDK_INT >= 23 && checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+            stopForLocationFailure();
             return;
         }
+
+        boolean providerRequested = false;
+        try {
+            if (locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
+                locationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER, 1000L, 1f, this);
+                providerRequested = true;
+            }
+        } catch (Exception ignored) { }
+
+        try {
+            if (locationManager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)) {
+                locationManager.requestLocationUpdates(LocationManager.NETWORK_PROVIDER, 3000L, 3f, this);
+                providerRequested = true;
+            }
+        } catch (Exception ignored) { }
+
+        if (!providerRequested) {
+            stopForLocationFailure();
+            return;
+        }
+
+        seedFromLastKnownLocation();
         persist(true);
         handler.removeCallbacks(ticker);
         handler.post(ticker);
         broadcastState();
+    }
+
+    @android.annotation.SuppressLint("MissingPermission")
+    private void seedFromLastKnownLocation() {
+        Location best = null;
+        try { best = betterLocation(best, locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER)); }
+        catch (Exception ignored) { }
+        try { best = betterLocation(best, locationManager.getLastKnownLocation(LocationManager.NETWORK_PROVIDER)); }
+        catch (Exception ignored) { }
+        if (best == null) return;
+        long age = best.getTime() > 0L ? Math.abs(System.currentTimeMillis() - best.getTime()) : Long.MAX_VALUE;
+        if (age <= 120000L) onLocationChanged(best);
+    }
+
+    private Location betterLocation(Location current, Location candidate) {
+        if (candidate == null) return current;
+        if (current == null) return candidate;
+        float currentAccuracy = current.hasAccuracy() ? current.getAccuracy() : Float.MAX_VALUE;
+        float candidateAccuracy = candidate.hasAccuracy() ? candidate.getAccuracy() : Float.MAX_VALUE;
+        if (candidate.getTime() > current.getTime() + 30000L) return candidate;
+        return candidateAccuracy < currentAccuracy ? candidate : current;
+    }
+
+    private void stopForLocationFailure() {
+        tracking = false;
+        accuracyMeters = -1f;
+        persist(true);
+        broadcastState();
+        stopForeground(true);
+        stopSelf();
     }
 
     private void pauseTracking() {
@@ -149,26 +192,28 @@ public class WalkTrackingService extends Service implements LocationListener {
     @Override public void onLocationChanged(Location location) {
         if (!tracking || location == null) return;
         long now = System.currentTimeMillis();
-        if (location.getTime() > 0 && Math.abs(now - location.getTime()) > 15000L) return;
+        if (location.getTime() > 0 && Math.abs(now - location.getTime()) > 120000L) return;
         float accuracy = location.hasAccuracy() ? location.getAccuracy() : 999f;
         accuracyMeters = accuracy;
-        if (accuracy > 35f) { broadcastState(); return; }
+        if (accuracy > 60f) { broadcastState(); return; }
 
-        if (lastLocation != null && location.getTime() >= lastAcceptedTime) {
-            long gapMillis = location.getTime() - lastAcceptedTime;
+        long locationTime = location.getTime() > 0L ? location.getTime() : now;
+        if (lastLocation != null && locationTime >= lastAcceptedTime) {
+            long gapMillis = locationTime - lastAcceptedTime;
             if (gapMillis <= 0L) gapMillis = 2000L;
             float seconds = gapMillis / 1000f;
             float segment = lastLocation.distanceTo(location);
-            float noiseFloor = Math.max(1.5f, (lastLocation.getAccuracy() + accuracy) * .08f);
-            float plausibleLimit = Math.max(12f, seconds * 4.5f + Math.min(accuracy, 20f) * .35f);
-            if (segment >= noiseFloor && segment <= plausibleLimit && gapMillis <= 15000L) {
+            float previousAccuracy = lastLocation.hasAccuracy() ? lastLocation.getAccuracy() : accuracy;
+            float noiseFloor = Math.max(1.5f, (previousAccuracy + accuracy) * .08f);
+            float plausibleLimit = Math.max(12f, seconds * 4.5f + Math.min(accuracy, 25f) * .35f);
+            if (segment >= noiseFloor && segment <= plausibleLimit && gapMillis <= 20000L) {
                 distanceMeters += segment;
                 currentSpeedKmh = location.hasSpeed() ? location.getSpeed() * 3.6f : (segment / seconds) * 3.6f;
                 currentSpeedKmh = Math.max(0f, Math.min(25f, currentSpeedKmh));
             }
         }
         lastLocation = new Location(location);
-        lastAcceptedTime = location.getTime() > 0 ? location.getTime() : now;
+        lastAcceptedTime = locationTime;
         persist(false);
         broadcastState();
     }
@@ -228,7 +273,7 @@ public class WalkTrackingService extends Service implements LocationListener {
     }
 
     private Notification notification() {
-        Intent open = new Intent(this, MainActivity.class);
+        Intent open = new Intent(this, SoundMainActivity.class);
         int pendingFlags = PendingIntent.FLAG_UPDATE_CURRENT;
         if (Build.VERSION.SDK_INT >= 23) pendingFlags |= PendingIntent.FLAG_IMMUTABLE;
         PendingIntent pending = PendingIntent.getActivity(this, 0, open, pendingFlags);
