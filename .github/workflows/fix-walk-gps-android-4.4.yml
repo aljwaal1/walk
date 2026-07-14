@@ -1,0 +1,104 @@
+name: Fix Walk GPS Android 4.4
+
+on:
+  push:
+    branches: [android-4.4]
+    paths: ['.github/workflows/fix-walk-gps-android-4.4.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: android-4.4
+          fetch-depth: 0
+
+      - name: Apply GPS compatibility patch
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          service = Path('legacy-android-4.4/app/src/main/java/com/explapp/walklegacy/WalkTrackingService.java')
+          text = service.read_text(encoding='utf-8')
+
+          old = '''        boolean providerRequested = false;
+        try {
+            if (locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
+                locationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER, 1000L, 1f, this);
+                providerRequested = true;
+            }
+        } catch (Exception ignored) { }
+
+        try {
+            if (locationManager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)) {
+                locationManager.requestLocationUpdates(LocationManager.NETWORK_PROVIDER, 3000L, 3f, this);
+                providerRequested = true;
+            }
+        } catch (Exception ignored) { }
+'''
+
+          new = '''        boolean providerRequested = false;
+        try {
+            java.util.List<String> providers = locationManager.getProviders(true);
+            for (String provider : providers) {
+                if (provider == null || LocationManager.PASSIVE_PROVIDER.equals(provider)) continue;
+                long minTime = LocationManager.GPS_PROVIDER.equals(provider) ? 700L : 1800L;
+                locationManager.requestLocationUpdates(provider, minTime, 0f, this);
+                providerRequested = true;
+            }
+        } catch (Exception ignored) { }
+
+        if (!providerRequested) {
+            try {
+                locationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER, 700L, 0f, this);
+                providerRequested = true;
+            } catch (Exception ignored) { }
+        }
+'''
+
+          if old not in text:
+              raise SystemExit('GPS request block not found')
+          text = text.replace(old, new)
+
+          old_accuracy = '''        float accuracy = location.hasAccuracy() ? location.getAccuracy() : 999f;
+        accuracyMeters = accuracy;
+        if (accuracy > 60f) { broadcastState(); return; }
+'''
+          new_accuracy = '''        float accuracy;
+        if (location.hasAccuracy()) accuracy = location.getAccuracy();
+        else if (LocationManager.GPS_PROVIDER.equals(location.getProvider())) accuracy = 45f;
+        else if (LocationManager.NETWORK_PROVIDER.equals(location.getProvider())) accuracy = 90f;
+        else accuracy = 70f;
+        accuracyMeters = accuracy;
+        if (accuracy > 90f) { persist(false); broadcastState(); return; }
+'''
+          if old_accuracy not in text:
+              raise SystemExit('accuracy block not found')
+          text = text.replace(old_accuracy, new_accuracy)
+
+          text = text.replace('if (accuracy > 60f)', 'if (accuracy > 90f)')
+          service.write_text(text, encoding='utf-8')
+
+          activity = Path('legacy-android-4.4/app/src/main/java/com/explapp/walklegacy/MainActivity.java')
+          ui = activity.read_text(encoding='utf-8')
+          ui = ui.replace('accuracyMeters > 35f ? "إشارة ضعيفة • انتظر قليلاً" : "التتبع نشط في الخلفية"',
+                          'accuracyMeters < 0f ? "جاري البحث عن إشارة GPS" : accuracyMeters > 60f ? "تم التقاط الموقع • الدقة تتحسن" : "إشارة GPS متصلة • التتبع نشط"')
+          activity.write_text(ui, encoding='utf-8')
+          PY
+
+      - name: Commit fix
+        shell: bash
+        run: |
+          git config user.name github-actions
+          git config user.email github-actions@github.com
+          git add legacy-android-4.4/app/src/main/java/com/explapp/walklegacy/WalkTrackingService.java \
+                  legacy-android-4.4/app/src/main/java/com/explapp/walklegacy/MainActivity.java
+          git commit -m 'fix(legacy): robust GPS acquisition on Android 4.4'
+          git pull --rebase origin android-4.4
+          git push origin HEAD:android-4.4
